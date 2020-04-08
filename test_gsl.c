@@ -347,20 +347,24 @@ main (void)
 			/* generate synthetic data with noise */
 			for (size_t i = 0; i < n; ++i)
 			  {
-				/* Set range 10ms +- 2ms */
-				double t = ((double)i / (double) n) 	// = (0..1)
-					  * (bin_max - bin_min)+ bin_min;	// sample into range of bins
+				// get range of bin
+				double t,t1;
+				(void)gsl_histogram_get_range(h, i, &t, &t1);
+
+				// take average value
+				t= (t+t1)/2;
+
+				// compute Gaussian value and random noise
 				double y0 = gaussian(a, b, c, t);
 				double dy = gsl_ran_gaussian (r, 0.1 * y0);
 
-				//gsl_histogram_increment (h, x);
+				// insert into histogram
 				gsl_histogram_accumulate(h, t, y0 + dy);
-
 			  }
 			gsl_rng_free(r);
 		}
 
-		// pass histogramm to fitting structure
+		// pass histogram to fitting structure
 		fit_data.t = h->range;
 		fit_data.y = h->bin;
 		fit_data.n = n;
