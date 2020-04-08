@@ -265,123 +265,30 @@ static inline void tsnorm(struct timespec *ts)
 int
 main (void)
 {
-	// data buckets (vectors) size
+	/*
+	 * fitting parameter vector and constant init
+	 */
 	const size_t p = 3;    /* number of model parameters, = polynomial or function size */
-	// synthetic Gaussian parameters
-	const double a = 100.0;  	/* amplitude */ // = number of occurences
-	const double b = 0.010500;  /* center */
-	const double c = 0.000150;  /* width */
-
 	gsl_vector *x = gsl_vector_alloc(p); /* model parameter vector */
-
-	// function definition setup for solver ->
-	// pointers to f (model function), df (model differential), and fvv (model acceleration)
-	gsl_multifit_nlinear_fdf fdf;
-	// function solver parameters for TRS problem
-	gsl_multifit_nlinear_parameters fdf_params =
-		gsl_multifit_nlinear_default_parameters();
-
 	/* (Gaussian) fitting model starting parameters, updated through iterations */
 	gsl_vector_set(x, 0, 80.0);  		/* amplitude */
 	gsl_vector_set(x, 1, 0.010200); 	/* center */
 	gsl_vector_set(x, 2, 0.001000); 	/* width */
 
-	// Histogram parameters, start point
+	/*
+	 * Histogram parameters, start point, init memory
+	 */
 	size_t n = 300;  /* number of bins to fit */
 	double bin_min = 0.009500;
 	double bin_max = 0.012000;
-
 	/* Allocate memory, histogram data for RTC accumulation */
 	gsl_histogram * h = gsl_histogram_alloc (n);
 
-	/*
-	 * generate data for fitting test
-	 */
-	struct data fit_data;
 
-	// init random Gaussian noise
-	const gsl_rng_type * T = gsl_rng_default;
-	gsl_rng * r;
-	gsl_rng_env_setup ();
-	r = gsl_rng_alloc (T);
+	struct data fit_data;
 
 	// Solver iterations start here
 	for ( int run_iter=0; run_iter < NOITER; run_iter++) {
-
-		(void)printf("***** Solver Iteration %d *****\n", run_iter+1);
-		fflush(stdout);
-
-		// set ranges and reset bins, fixed to n bin count
-		gsl_histogram_set_ranges_uniform (h, bin_min, bin_max);
-
-		/* generate synthetic data with noise */
-		for (size_t i = 0; i < n; ++i)
-		  {
-			/* Set range 10ms +- 2ms */
-			double t = ((double)i / (double) n) 	// = (0..1)
-				  * (bin_max - bin_min)+ bin_min;	// sample into range of bins
-			double y0 = gaussian(a, b, c, t);
-			double dy = gsl_ran_gaussian (r, 0.1 * y0);
-
-			//gsl_histogram_increment (h, x);
-			gsl_histogram_accumulate(h, t, y0 + dy);
-
-		  }
-
-		fit_data.t = h->range;
-		fit_data.y = h->bin;
-		fit_data.n = n;
-
-		/*
-		* 	Starting from here, fitting method setup, TRS
-		*/
-
-		/* define function parameters to be minimized */
-		fdf.f = func_f;			// fitting test to Gaussian
-		fdf.df = func_df;			// first derivative Gaussian
-		fdf.fvv = func_fvv;		// acceleration method function for Gaussian
-		fdf.n = n;				// number of functions => fn(tn) = yn
-		fdf.p = p;				// number of independent variables in model
-		fdf.params = &fit_data;	// data-vector for the n functions
-
-		// enable Levenberg-Marquardt Geodesic acceleration method for trust-region subproblem
-		fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
-
-		/*
-		* Call solver
-		*/
-
-		// get timestamp
-		int ret;
-		struct timespec now, old;
-		{
-
-			// get clock, use it as a future reference for update time TIMER_ABS*
-			ret = clock_gettime(CLOCK_MONOTONIC, &old);
-			if (0 != ret) {
-				if (EINTR != ret)
-					printf("clock_gettime() failed: %s", strerror(errno));
-			}
-		}
-		solve_system(x, &fdf, &fdf_params);
-
-		// update timestamp
-		{
-			ret = clock_gettime(CLOCK_MONOTONIC, &now);
-			if (0 != ret) {
-				if (EINTR != ret)
-					printf("clock_gettime() failed: %s", strerror(errno));
-			}
-
-			// compute difference -> time needed
-			now.tv_sec -= old.tv_sec;
-			now.tv_nsec -= old.tv_nsec;
-			tsnorm(&now);
-
-			printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
-		}
-
-	    //gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
 
 		/*
 		 * Scott, D. 1979.
@@ -389,7 +296,7 @@ main (void)
 		 * Biometrika, 66:605-610.
 		 *
 		 */
-		if ( (run_iter + 1) < NOITER) {
+		if (run_iter) {
 			// update bin range
 
 			// get parameters and free histogram
@@ -409,11 +316,114 @@ main (void)
 				n = new_n;
 				h = gsl_histogram_alloc (n);
 			}
+			// TODO: if the same size-> floating average filter?
 
 			// adjust margins bin limits
 			bin_min = mn - ((double)n/2.0)*W;
 			bin_max = mn + ((double)n/2.0)*W;
 		}
+		// set ranges and reset bins, fixed to n bin count
+		gsl_histogram_set_ranges_uniform (h, bin_min, bin_max);
+
+		(void)printf("***** Solver Iteration %d *****\n", run_iter+1);
+		fflush(stdout);
+
+
+		/*
+		 * generation of random data -> Gaussian with noise
+		 */
+		{
+			// init random Gaussian noise
+			const gsl_rng_type * T = gsl_rng_default;
+			gsl_rng * r;
+			gsl_rng_env_setup ();
+			r = gsl_rng_alloc (T);
+
+			// synthetic Gaussian parameters
+			const double a = 100.0;  	/* amplitude */ // = number of occurences
+			const double b = 0.010500;  /* center */
+			const double c = 0.000150;  /* width */
+
+			/* generate synthetic data with noise */
+			for (size_t i = 0; i < n; ++i)
+			  {
+				/* Set range 10ms +- 2ms */
+				double t = ((double)i / (double) n) 	// = (0..1)
+					  * (bin_max - bin_min)+ bin_min;	// sample into range of bins
+				double y0 = gaussian(a, b, c, t);
+				double dy = gsl_ran_gaussian (r, 0.1 * y0);
+
+				//gsl_histogram_increment (h, x);
+				gsl_histogram_accumulate(h, t, y0 + dy);
+
+			  }
+			gsl_rng_free(r);
+		}
+
+		// pass histogramm to fitting structure
+		fit_data.t = h->range;
+		fit_data.y = h->bin;
+		fit_data.n = n;
+
+		/*
+		 * 	Starting from here, fitting method setup, TRS
+		 */
+		{
+			// function definition setup for solver ->
+			// pointers to f (model function), df (model differential), and fvv (model acceleration)
+			gsl_multifit_nlinear_fdf fdf;
+			// function solver parameters for TRS problem
+			gsl_multifit_nlinear_parameters fdf_params =
+				gsl_multifit_nlinear_default_parameters();
+
+
+			/* define function parameters to be minimized */
+			fdf.f = func_f;			// fitting test to Gaussian
+			fdf.df = func_df;			// first derivative Gaussian
+			fdf.fvv = func_fvv;		// acceleration method function for Gaussian
+			fdf.n = n;				// number of functions => fn(tn) = yn
+			fdf.p = p;				// number of independent variables in model
+			fdf.params = &fit_data;	// data-vector for the n functions
+
+			// enable Levenberg-Marquardt Geodesic acceleration method for trust-region subproblem
+			fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
+
+			/*
+			* Call solver
+			*/
+
+			// get timestamp
+			int ret;
+			struct timespec now, old;
+			{
+
+				// get clock, use it as a future reference for update time TIMER_ABS*
+				ret = clock_gettime(CLOCK_MONOTONIC, &old);
+				if (0 != ret) {
+					if (EINTR != ret)
+						printf("clock_gettime() failed: %s", strerror(errno));
+				}
+			}
+			solve_system(x, &fdf, &fdf_params);
+
+			// update timestamp
+			{
+				ret = clock_gettime(CLOCK_MONOTONIC, &now);
+				if (0 != ret) {
+					if (EINTR != ret)
+						printf("clock_gettime() failed: %s", strerror(errno));
+				}
+
+				// compute difference -> time needed
+				now.tv_sec -= old.tv_sec;
+				now.tv_nsec -= old.tv_nsec;
+				tsnorm(&now);
+
+				printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
+			}
+		}
+
+	    //gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
 
 	}
 	/*
@@ -436,11 +446,9 @@ main (void)
 	}
 
 	/*
-	* Free vectors and range for Gaussian noise (fake data)
+	* Free parameter vector and histogram structure
 	*/
 	gsl_vector_free(x);
-	gsl_rng_free(r);
-
 	gsl_histogram_free (h);
 
 	return 0;
