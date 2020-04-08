@@ -189,10 +189,11 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
              gsl_multifit_nlinear_parameters *params)
 {
 	const gsl_multifit_nlinear_type *T = gsl_multifit_nlinear_trust;
-	const size_t max_iter = 40;
-	const double xtol = 1.0e-64;
-	const double gtol = 1.0e-64;
-	const double ftol = 1.0e-64;
+	const size_t max_iter = 40;  // originally set to 200
+	const double xtol = 1.0e-64; // originally set to -8
+	const double gtol = 1.0e-64; // originally set to -8
+	const double ftol = 1.0e-64; // originally set to -8
+
 	const size_t n = fdf->n;
 	const size_t p = fdf->p;
 	gsl_multifit_nlinear_workspace *work =
@@ -265,16 +266,13 @@ int
 main (void)
 {
 	// data buckets (vectors) size
-	const size_t n = 300;  /* number of data points to fit = bin count */
 	const size_t p = 3;    /* number of model parameters, = polynomial or function size */
 	// synthetic Gaussian parameters
-	const double a = 10.0;  	/* amplitude */ // = number of occurences
+	const double a = 100.0;  	/* amplitude */ // = number of occurences
 	const double b = 0.010500;  /* center */
 	const double c = 0.000150;  /* width */
 
-	gsl_vector *f = gsl_vector_alloc(n); /* data vector */
 	gsl_vector *x = gsl_vector_alloc(p); /* model parameter vector */
-	gsl_histogram * h = gsl_histogram_alloc (n); /* histogram data for RTC accumualtion */
 
 	// function definition setup for solver ->
 	// pointers to f (model function), df (model differential), and fvv (model acceleration)
@@ -284,13 +282,17 @@ main (void)
 		gsl_multifit_nlinear_default_parameters();
 
 	/* (Gaussian) fitting model starting parameters, updated through iterations */
-	gsl_vector_set(x, 0, 8.0);  		/* amplitude */
+	gsl_vector_set(x, 0, 80.0);  		/* amplitude */
 	gsl_vector_set(x, 1, 0.010200); 	/* center */
 	gsl_vector_set(x, 2, 0.001000); 	/* width */
 
-	// Histogram adaptation size
+	// Histogram parameters, start point
+	size_t n = 300;  /* number of bins to fit */
 	double bin_min = 0.009500;
 	double bin_max = 0.012000;
+
+	/* Allocate memory, histogram data for RTC accumulation */
+	gsl_histogram * h = gsl_histogram_alloc (n);
 
 	/*
 	 * generate data for fitting test
@@ -379,6 +381,39 @@ main (void)
 			printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
 		}
 
+	    //gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
+
+		/*
+		 * Scott, D. 1979.
+		 * On optimal and data-based histograms.
+		 * Biometrika, 66:605-610.
+		 *
+		 */
+		if ( (run_iter + 1) < NOITER) {
+			// update bin range
+
+			// get parameters and free histogram
+			double mn = gsl_histogram_mean(h); 	// sample mean
+			double sd = gsl_histogram_sigma(h); // sample standard deviation
+			double N = gsl_histogram_sum(h);
+
+			// compute ideal bin size according to Scott 1979
+			double W = 3.49*sd*pow(N, (double)-1/3);
+
+			// bin count to cover 10 standard deviations both sides
+			int new_n = (int)trunc(sd*20/W);
+
+			if (n != new_n) {
+				// if bin count differs, reallocate
+				gsl_histogram_free (h);
+				n = new_n;
+				h = gsl_histogram_alloc (n);
+			}
+
+			// adjust margins bin limits
+			bin_min = mn - ((double)n/2.0)*W;
+			bin_max = mn + ((double)n/2.0)*W;
+		}
 
 	}
 	/*
@@ -403,7 +438,6 @@ main (void)
 	/*
 	* Free vectors and range for Gaussian noise (fake data)
 	*/
-	gsl_vector_free(f);
 	gsl_vector_free(x);
 	gsl_rng_free(r);
 
