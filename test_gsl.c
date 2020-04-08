@@ -254,82 +254,70 @@ static inline void tsnorm(struct timespec *ts)
 	}
 }
 
-#define NOITER 2 // number of sampling iterations for fitting
+#define NOITER 5 // number of sampling iterations for fitting
+
+/*
+ *  Main test program for non-linear weighted least square fitting
+ *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
+ */
 
 int
 main (void)
 {
-	const size_t n = 100;  /* number of data points to fit */
-	const size_t p = 3;    /* number of model parameters */
-
-	gsl_vector *f = gsl_vector_alloc(n); /* data vector */
-	gsl_vector *x = gsl_vector_alloc(p); /* model parameter vector */
-
+	// data buckets (vectors) size
+	const size_t n = 300;  /* number of data points to fit = bin count */
+	const size_t p = 3;    /* number of model parameters, = polynomial or function size */
+	// synthetic Gaussian parameters
 	const double a = 10.0;  	/* amplitude */ // = number of occurences
 	const double b = 0.010500;  /* center */
 	const double c = 0.000150;  /* width */
-	const gsl_rng_type * T = gsl_rng_default;
+
+	gsl_vector *f = gsl_vector_alloc(n); /* data vector */
+	gsl_vector *x = gsl_vector_alloc(p); /* model parameter vector */
+	gsl_histogram * h = gsl_histogram_alloc (n); /* histogram data for RTC accumualtion */
+
+	// function definition setup for solver ->
+	// pointers to f (model function), df (model differential), and fvv (model acceleration)
 	gsl_multifit_nlinear_fdf fdf;
+	// function solver parameters for TRS problem
 	gsl_multifit_nlinear_parameters fdf_params =
 		gsl_multifit_nlinear_default_parameters();
 
-	/* (Gaussian) fitting model starting parameters */
+	/* (Gaussian) fitting model starting parameters, updated through iterations */
 	gsl_vector_set(x, 0, 8.0);  		/* amplitude */
 	gsl_vector_set(x, 1, 0.010200); 	/* center */
 	gsl_vector_set(x, 2, 0.001000); 	/* width */
 
-	//  /*
-	//   * generate data for fitting test
-	//   */
-	//  struct data fit_data;
-	//  gsl_rng * r;
-	//  size_t i;
-	//
-	//  gsl_rng_env_setup ();
-	//  r = gsl_rng_alloc (T);
-	//
-	//  fit_data.t = malloc(n * sizeof(double));
-	//  fit_data.y = malloc(n * sizeof(double));
-	//  fit_data.n = n;
-	//
-
-	gsl_histogram * h = gsl_histogram_alloc (n);
-	gsl_histogram_set_ranges_uniform (h, 0.009000, 0.009000 + 0.002000);
+	// Histogram adaptation size
+	double bin_min = 0.009500;
+	double bin_max = 0.012000;
 
 	/*
 	 * generate data for fitting test
 	 */
 	struct data fit_data;
-	gsl_rng * r;
-	size_t i;
 
+	// init random Gaussian noise
+	const gsl_rng_type * T = gsl_rng_default;
+	gsl_rng * r;
 	gsl_rng_env_setup ();
 	r = gsl_rng_alloc (T);
 
+	// Solver iterations start here
 	for ( int run_iter=0; run_iter < NOITER; run_iter++) {
 
 		(void)printf("***** Solver Iteration %d *****\n", run_iter+1);
 		fflush(stdout);
 
-	//  /* generate synthetic data with noise */
-	//  for (i = 0; i < n; ++i)
-	//    {
-	//	  /* Set sampling range 10ms +- 2ms */
-	//      double t = ((double)i / (double) n) // = (0..1)
-	//    		  * 0.002000 + 0.009000;	  // * scale (4000mu sec) + offset (8000mu sec)
-	//      double y0 = gaussian(a, b, c, t);
-	//      double dy = gsl_ran_gaussian (r, 0.1 * y0);
-	//
-	//      fit_data.t[i] = t;
-	//      fit_data.y[i] = y0 + dy;
-	//    }
+		// set ranges and reset bins, fixed to n bin count
+		gsl_histogram_set_ranges_uniform (h, bin_min, bin_max);
 
 		/* generate synthetic data with noise */
-		for (i = 0; i < n; ++i)
+		for (size_t i = 0; i < n; ++i)
 		  {
 			/* Set range 10ms +- 2ms */
-			double t = ((double)i / (double) n) // = (0..1)
-				  * 0.002000 + 0.009000;	  // * scale (4000mu sec) + offset (8000mu sec)
+			double t = ((double)i / (double) n) 	// = (0..1)
+				  * (bin_max - bin_min)+ bin_min;	// sample into range of bins
 			double y0 = gaussian(a, b, c, t);
 			double dy = gsl_ran_gaussian (r, 0.1 * y0);
 
@@ -402,7 +390,7 @@ main (void)
 	double B = gsl_vector_get(x, 1);
 	double C = gsl_vector_get(x, 2);
 
-	for (i = 0; i < n; ++i)
+	for (size_t i = 0; i < n; ++i)
 	  {
 		double ti = fit_data.t[i];
 		double yi = fit_data.y[i];
