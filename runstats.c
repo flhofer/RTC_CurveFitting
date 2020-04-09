@@ -3,26 +3,25 @@
  *
  *  Created on: Apr 8, 2020
  *      Author: Florian Hofer
+ *
+ *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
  */
+
+
 
 #include "runstats.h"
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
-#include <locale.h>
-
-#include <time.h>			// constants and functions for clock
 #include <errno.h>			// system error management (LIBC)
 #include <string.h>			// strerror print
 
-#define USEC_PER_SEC		1000000
-#define NSEC_PER_SEC		1000000000
+
+const size_t p = 3;    /* number of model parameters, = polynomial or function size */
 
 struct data
 {
@@ -245,113 +244,120 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 	gsl_multifit_nlinear_free(work);
 }
 
-
 /*
-/// tsnorm(): verifies timespec for boundaries + fixes it
-///
-/// Arguments: pointer to timespec to check
-///
-/// Return value: -
+ * runstats_initparam: inits the parameter vector
  *
+ * Arguments: - pointer to pointer to the memory location for storage
+ *
+ * Return value: success or error code
  */
-static inline void tsnorm(struct timespec *ts)
-{
-	while (ts->tv_nsec >= NSEC_PER_SEC) {
-		ts->tv_nsec -= NSEC_PER_SEC;
-		ts->tv_sec++;
-	}
+int
+runstats_initparam(stat_param ** x){
+
+	/*
+	 * fitting parameter vector and constant init
+	 */
+	*x = gsl_vector_alloc(p); /* model parameter vector */
+	/* (Gaussian) fitting model starting parameters, updated through iterations */
+	gsl_vector_set(*x, 0, 80.0);  		/* amplitude */
+	gsl_vector_set(*x, 1, 0.010200); 	/* center */
+	gsl_vector_set(*x, 2, 0.001000); 	/* width */
+
+	// TODO: return value
+	return 0;
 }
 
-#define NOITER 5 // number of sampling iterations for fitting
+/*
+ * runstats_inithist: inits the histogram data structure
+ *
+ * Arguments: - pointer to pointer to the memory location for storage
+ *
+ * Return value: success or error code
+ */
+int
+runstats_inithist(stat_hist ** h){
+	/*
+	 * Histogram parameters, start point, init memory
+	 */
+	size_t n = 300;  /* number of bins to fit */
+	double bin_min = 0.009500;
+	double bin_max = 0.012000;
+	/* Allocate memory, histogram data for RTC accumulation */
+	*h = gsl_histogram_alloc (n);
+	// set ranges and reset bins, fixed to n bin count
+	(void)gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max);
+
+	// TODO: return value
+	return 0;
+}
 
 /*
- *  Main solver
- *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
+ * runstats_fithist: fit bin size to data in histogram and reset
+ *
+ * Arguments: - pointer holding the histogram pointer
+ *
+ * Return value: success or error code
  */
+int
+runstats_fithist(stat_hist **h)
+/*
+ * Scott, D. 1979.
+ * On optimal and data-based histograms.
+ * Biometrika, 66:605-610.
+ *
+ */
+{
+	// update bin range
 
+	// get parameters and free histogram
+	double mn = gsl_histogram_mean(*h); 	// sample mean
+	double sd = gsl_histogram_sigma(*h); // sample standard deviation
+	double N = gsl_histogram_sum(*h);
+
+	size_t n = gsl_histogram_bins(*h);
+
+	// compute ideal bin size according to Scott 1979
+	double W = 3.49*sd*pow(N, (double)-1/3);
+
+	// bin count to cover 10 standard deviations both sides
+	size_t new_n = (size_t)trunc(sd*20/W);
+
+	if (n != new_n) {
+		// if bin count differs, reallocate
+		gsl_histogram_free (*h);
+		n = new_n;
+		*h = gsl_histogram_alloc (n);
+		// set ranges and reset bins, fixed to n bin count
+	}
+	// TODO: if the same size-> floating average filter?
+
+	// adjust margins bin limits
+	double bin_min = mn - ((double)n/2.0)*W;
+	double bin_max = mn + ((double)n/2.0)*W;
+	(void)gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max);
+
+	return 0;
+}
+
+/*
+ * runstats_solvehist: run least squares fitting with TRS and accel
+ *
+ * Arguments: - pointer to the histogram
+ * 			  - pointer to the parameter vector
+ *
+ * Return value: success or error code
+ */
 int
 runstats_solvehist(stat_hist * h, stat_param * x)
 {
-
-	const size_t p = 3;    /* number of model parameters, = polynomial or function size */
-
-	if (!x){
-		/*
-		 * fitting parameter vector and constant init
-		 */
-		gsl_vector_alloc(p); /* model parameter vector */
-		/* (Gaussian) fitting model starting parameters, updated through iterations */
-		gsl_vector_set(x, 0, 80.0);  		/* amplitude */
-		gsl_vector_set(x, 1, 0.010200); 	/* center */
-		gsl_vector_set(x, 2, 0.001000); 	/* width */
-	}
-
-	double bin_min;
-	double bin_max;
-	size_t n;
-	int rst = 0;
-	if (!h){
-		/*
-		 * Histogram parameters, start point, init memory
-		 */
-		n = 300;  /* number of bins to fit */
-		bin_min = 0.009500;
-		bin_max = 0.012000;
-		/* Allocate memory, histogram data for RTC accumulation */
-		h = gsl_histogram_alloc (n);
-	}
-	else{
-		n = 0;
-		bin_min = 0.009500;
-		bin_max = 0.012000;
-		rst = 1;
-	}
-
-
-	struct data fit_data;
-
-	/*
-	 * Scott, D. 1979.
-	 * On optimal and data-based histograms.
-	 * Biometrika, 66:605-610.
-	 *
-	 */
-	if (rst) {
-		// update bin range
-
-		// get parameters and free histogram
-		double mn = gsl_histogram_mean(h); 	// sample mean
-		double sd = gsl_histogram_sigma(h); // sample standard deviation
-		double N = gsl_histogram_sum(h);
-
-		// compute ideal bin size according to Scott 1979
-		double W = 3.49*sd*pow(N, (double)-1/3);
-
-		// bin count to cover 10 standard deviations both sides
-		int new_n = (int)trunc(sd*20/W);
-
-		if (n != new_n) {
-			// if bin count differs, reallocate
-			gsl_histogram_free (h);
-			n = new_n;
-			h = gsl_histogram_alloc (n);
-		}
-		// TODO: if the same size-> floating average filter?
-
-		// adjust margins bin limits
-		bin_min = mn - ((double)n/2.0)*W;
-		bin_max = mn + ((double)n/2.0)*W;
-	}
-
-	// set ranges and reset bins, fixed to n bin count
-	gsl_histogram_set_ranges_uniform (h, bin_min, bin_max);
-
-	fflush(stdout);
+	if ((!x) || (!h))
+		return -1;
 
 	// pass histogram to fitting structure
+	struct data fit_data;
 	fit_data.t = h->range;
 	fit_data.y = h->bin;
-	fit_data.n = n;
+	fit_data.n = h->n;
 
 	/*
 	 * 	Starting from here, fitting method setup, TRS
@@ -367,9 +373,9 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 
 		/* define function parameters to be minimized */
 		fdf.f = func_f;			// fitting test to Gaussian
-		fdf.df = func_df;			// first derivative Gaussian
+		fdf.df = func_df;		// first derivative Gaussian
 		fdf.fvv = func_fvv;		// acceleration method function for Gaussian
-		fdf.n = n;				// number of functions => fn(tn) = yn
+		fdf.n = fit_data.n;	// number of functions => fn(tn) = yn
 		fdf.p = p;				// number of independent variables in model
 		fdf.params = &fit_data;	// data-vector for the n functions
 
@@ -379,64 +385,9 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 		/*
 		* Call solver
 		*/
-
-		// get timestamp
-		int ret;
-		struct timespec now, old;
-		{
-
-			// get clock, use it as a future reference for update time TIMER_ABS*
-			ret = clock_gettime(CLOCK_MONOTONIC, &old);
-			if (0 != ret) {
-				if (EINTR != ret)
-					printf("clock_gettime() failed: %s", strerror(errno));
-			}
-		}
 		solve_system(x, &fdf, &fdf_params);
 
-		// update timestamp
-		{
-			ret = clock_gettime(CLOCK_MONOTONIC, &now);
-			if (0 != ret) {
-				if (EINTR != ret)
-					printf("clock_gettime() failed: %s", strerror(errno));
-			}
-
-			// compute difference -> time needed
-			now.tv_sec -= old.tv_sec;
-			now.tv_nsec -= old.tv_nsec;
-			tsnorm(&now);
-
-			printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
-		}
 	}
-
-	    //gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
-
-	/*
-	* print resulting data and model
-	* - results vs reality data points
-	*/
-	{
-	double A = gsl_vector_get(x, 0);
-	double B = gsl_vector_get(x, 1);
-	double C = gsl_vector_get(x, 2);
-
-	for (size_t i = 0; i < n; ++i)
-	  {
-		double ti = fit_data.t[i];
-		double yi = fit_data.y[i];
-		double fi = gaussian(A, B, C, ti);
-
-		printf("%f %f %f\n", ti, yi, fi);
-	  }
-	}
-
-	/*
-	* Free parameter vector and histogram structure
-	*/
-	gsl_vector_free(x);
-	gsl_histogram_free (h);
 
 	return 0;
 }

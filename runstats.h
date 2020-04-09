@@ -15,7 +15,9 @@
 typedef gsl_histogram stat_hist;
 typedef gsl_vector stat_param;
 
-
+int runstats_fithist(stat_hist **h);
+int runstats_initparam(stat_param ** x);
+int runstats_inithist(stat_hist ** h);
 int runstats_solvehist(stat_hist * h, stat_param * x);
 
 #endif /* RUNSTATS_H_ */
