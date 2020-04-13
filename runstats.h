@@ -15,9 +15,14 @@
 typedef gsl_histogram stat_hist;
 typedef gsl_vector stat_param;
 
-int runstats_fithist(stat_hist **h);
-int runstats_initparam(stat_param ** x);
-int runstats_inithist(stat_hist ** h);
+int runstats_initparam(stat_param ** x);	// init parameter vector
+int runstats_inithist(stat_hist ** h);		// init histogram data structure
+
 int runstats_solvehist(stat_hist * h, stat_param * x);
+											// fit model (gaussian) to histogram
+int runstats_fithist(stat_hist **h);		// fit histogram bins
+
+double runstats_gaussian(const double a, const double b,
+		const double c, const double t);
 
 #endif /* RUNSTATS_H_ */

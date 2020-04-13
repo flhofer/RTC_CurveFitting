@@ -16,6 +16,7 @@
 #include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
+#include <gsl/gsl_histogram.h>
 
 #include <errno.h>			// system error management (LIBC)
 #include <string.h>			// strerror print
@@ -30,9 +31,19 @@ struct data
 	size_t n;
 };
 
-/* model function: a * exp( -1/2 * [ (t - b) / c ]^2 ) */
-static double
-gaussian(const double a, const double b, const double c, const double t)
+/*
+ *  runstats_gaussian(): function to calculate Normal (Gaussian) distribution values
+ *
+ *  Arguments: - amplitude of Normal
+ * 			   - offset of Normal
+ * 			   - width of Normal
+ *
+ *  Return value: curve value on that point
+ *
+ * model function: a * exp( -1/2 * [ (t - b) / c ]^2 )
+ *  */
+double
+runstats_gaussian(const double a, const double b, const double c, const double t)
 {
 	const double z = (t - b) / c;
 	return (a * exp(-0.5 * z * z));
@@ -60,7 +71,7 @@ func_f (const gsl_vector * x, void *params, gsl_vector * f)
 	{
 	  double ti = d->t[i];
 	  double yi = d->y[i];
-	  double y = gaussian(a, b, c, ti);
+	  double y = runstats_gaussian(a, b, c, ti);
 
 	  gsl_vector_set(f, i, yi - y);
 	}

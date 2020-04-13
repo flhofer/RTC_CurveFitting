@@ -21,14 +21,6 @@ struct data
 	size_t n;
 };
 
-/* model function: a * exp( -1/2 * [ (t - b) / c ]^2 ) */
-static double
-gaussian(const double a, const double b, const double c, const double t)
-{
-	const double z = (t - b) / c;
-	return (a * exp(-0.5 * z * z));
-}
-
 /*
 /// tsnorm(): verifies timespec for boundaries + fixes it
 ///
@@ -99,7 +91,7 @@ main (void)
 				t= (t+t1)/2;
 
 				// compute Gaussian value and random noise
-				double y0 = gaussian(a, b, c, t);
+				double y0 = runstats_gaussian(a, b, c, t);
 				double dy = gsl_ran_gaussian (r, 0.1 * y0);
 
 				// insert into histogram
@@ -166,7 +158,7 @@ main (void)
 	  {
 		double ti = fit_data.t[i];
 		double yi = fit_data.y[i];
-		double fi = gaussian(A, B, C, ti);
+		double fi = runstats_gaussian(A, B, C, ti);
 
 		printf("%f %f %f\n", ti, yi, fi);
 	  }
