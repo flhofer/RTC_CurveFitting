@@ -7,6 +7,7 @@
 #include <time.h>			// constants and functions for clock
 #include <errno.h>			// system error management (LIBC)
 #include <string.h>			// strerror print
+#include <check.h>			// check C testing library
 
 #include "runstats.h"
 
@@ -43,8 +44,7 @@ static inline void tsnorm(struct timespec *ts)
  *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
  */
 
-int
-main (void)
+START_TEST(fitting_check_random)
 {
 	stat_hist * h;
 	stat_param * x;
@@ -171,5 +171,37 @@ main (void)
 	gsl_vector_free(x);
 	gsl_histogram_free (h);
 
-	return 0;
+}
+END_TEST
+
+void test_fitting (Suite * s) {
+
+	TCase *tc1 = tcase_create("Fitting_random");
+
+	tcase_add_test(tc1, fitting_check_random);
+
+    suite_add_tcase(s, tc1);
+
+	return;
+}
+
+
+int main(void)
+{
+	// init pseudo-random tables
+	srand(time(NULL));
+
+    int nf=0;
+    SRunner *sr;
+
+    Suite *s1 = suite_create("Fitting");
+    test_fitting(s1);
+	sr = srunner_create(s1);
+	// uncomment below for debugging
+//	srunner_set_fork_status (sr, CK_NOFORK);
+    srunner_run_all(sr, CK_NORMAL);
+    nf += srunner_ntests_failed(sr);
+    srunner_free(sr);
+
+    return nf == 0 ? 0 : 1;
 }
