@@ -22,6 +22,8 @@ int runstats_solvehist(stat_hist * h, stat_param * x);
 											// fit model (gaussian) to histogram
 int runstats_fithist(stat_hist **h);		// fit histogram bins
 
+int runstats_mdlpdf(stat_hist * h, stat_param * x, double t, double * p);
+
 double runstats_gaussian(const double a, const double b,
 		const double c, const double t);
 

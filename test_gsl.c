@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_histogram.h>
@@ -47,7 +46,7 @@ static inline void tsnorm(struct timespec *ts)
 int
 main (void)
 {
-	gsl_histogram * h;
+	stat_hist * h;
 	stat_param * x;
 
 	(void)runstats_inithist(&h);
@@ -163,6 +162,9 @@ main (void)
 		printf("%f %f %f\n", ti, yi, fi);
 	  }
 	}
+
+	double p = 0;
+	(void)runstats_mdlpdf(h, x, 0.010400, &p);
 
 	/*
 	* Free parameter vector and histogram structure

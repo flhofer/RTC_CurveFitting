@@ -11,16 +11,19 @@
 
 #include "runstats.h"
 
+
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_histogram.h>
+#include <gsl/gsl_integration.h>
 
 #include <errno.h>			// system error management (LIBC)
 #include <string.h>			// strerror print
 
+#define PI 3.14159265358979323846
 
 const size_t p = 3;    /* number of model parameters, = polynomial or function size */
 
@@ -47,6 +50,25 @@ runstats_gaussian(const double a, const double b, const double c, const double t
 {
 	const double z = (t - b) / c;
 	return (a * exp(-0.5 * z * z));
+}
+
+/*
+ *  func_gaussian(): function to calculate integral for gaussian fit
+ *
+ *  Arguments: - model fitting parameter vector
+ * 			   - function data points, f(t) = y (real)
+ * 			   - error/residual vector
+ *
+ *  Return value: status, success or error in computing value
+ */
+static double
+func_gaussian (double x, void * params)
+{
+	double a = gsl_vector_get(params, 0);
+	double b = gsl_vector_get(params, 1);
+	double c = gsl_vector_get(params, 2);
+
+	return runstats_gaussian(a, b, c, x);
 }
 
 /*
@@ -399,6 +421,49 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 		solve_system(x, &fdf, &fdf_params);
 
 	}
+
+	return 0;
+}
+
+int
+runstats_mdlpdf(stat_hist * h, stat_param * x, double t, double * p){
+
+	if ((!x) || (!h))
+		return -1;
+
+	double h_max = gsl_histogram_max(h);
+
+	stat_param * x0 = gsl_vector_alloc(p);
+
+	// clone vector
+	gsl_vector_memcpy(x0, x);
+
+	// Update to uniform value
+	double c = gsl_vector_get(x0, 2);
+	gsl_vector_set(x0, 2, 1/(sqrt(2*PI)*c));
+
+	gsl_integration_workspace * w
+	= gsl_integration_workspace_alloc (1000);
+
+	double result, error;
+	double expected = -4.0;
+
+	gsl_function F;
+	F.function = &func_gaussian;
+	F.params = x0;
+
+	gsl_integration_qags (&F, t, h_max, 0, 1e-7, 1000,
+						w, &result, &error);
+
+	printf ("result          = % .18f\n", result);
+	printf ("exact result    = % .18f\n", expected);
+	printf ("estimated error = % .18f\n", error);
+	printf ("actual error    = % .18f\n", result - expected);
+	printf ("intervals       = %zu\n", w->size);
+
+	gsl_integration_workspace_free (w);
+
+	*p = result;
 
 	return 0;
 }
