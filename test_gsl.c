@@ -148,7 +148,6 @@ main (void)
 	fit_data.y = h->bin;
 	fit_data.n = h->n;
 
-
 	double A = gsl_vector_get(x, 0);
 	double B = gsl_vector_get(x, 1);
 	double C = gsl_vector_get(x, 2);
@@ -163,8 +162,8 @@ main (void)
 	  }
 	}
 
-	double p = 0;
-	(void)runstats_mdlpdf(h, x, 0.010400, &p);
+	double p = 0, error = 0;
+	(void)runstats_mdlpdf(h, x, 0.010400, &p, &error);
 
 	/*
 	* Free parameter vector and histogram structure

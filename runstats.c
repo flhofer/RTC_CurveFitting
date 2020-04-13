@@ -23,9 +23,7 @@
 #include <errno.h>			// system error management (LIBC)
 #include <string.h>			// strerror print
 
-#define PI 3.14159265358979323846
-
-const size_t p = 3;    /* number of model parameters, = polynomial or function size */
+const size_t num_par = 3;   /* number of model parameters, = polynomial or function size */
 
 struct data
 {
@@ -290,7 +288,7 @@ runstats_initparam(stat_param ** x){
 	/*
 	 * fitting parameter vector and constant init
 	 */
-	*x = gsl_vector_alloc(p); /* model parameter vector */
+	*x = gsl_vector_alloc(num_par); /* model parameter vector */
 	/* (Gaussian) fitting model starting parameters, updated through iterations */
 	gsl_vector_set(*x, 0, 80.0);  		/* amplitude */
 	gsl_vector_set(*x, 1, 0.010200); 	/* center */
@@ -403,13 +401,12 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 		gsl_multifit_nlinear_parameters fdf_params =
 			gsl_multifit_nlinear_default_parameters();
 
-
 		/* define function parameters to be minimized */
 		fdf.f = func_f;			// fitting test to Gaussian
 		fdf.df = func_df;		// first derivative Gaussian
 		fdf.fvv = func_fvv;		// acceleration method function for Gaussian
-		fdf.n = fit_data.n;	// number of functions => fn(tn) = yn
-		fdf.p = p;				// number of independent variables in model
+		fdf.n = fit_data.n;		// number of functions => fn(tn) = yn
+		fdf.p = num_par;		// number of independent variables in model
 		fdf.params = &fit_data;	// data-vector for the n functions
 
 		// enable Levenberg-Marquardt Geodesic acceleration method for trust-region subproblem
@@ -425,45 +422,76 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 	return 0;
 }
 
+/*
+ * uniparm_sum: sum values and uniform parameters to area of 1
+ *
+ * Arguments: - pointer to pointer to parameters
+ *
+ * Return value: success or error code
+ */
+static int
+uniparm_sum(stat_param * x, const stat_param * x1){
+
+	int ret = gsl_vector_add(x,x1);
+	double c = gsl_vector_get(x, 2);
+	gsl_vector_set(x, 0, 1/(sqrt(2*M_PI)*c));
+
+	return ret;
+}
+
+/*
+ * uniparm_copy: uniform parameters to area of 1
+ *				 replaces the reference with a uniform copy, to be freed
+ *
+ * Arguments: - pointer to pointer to parameters
+ *
+ * Return value: success or error code
+ */
+static int
+uniparm_copy(stat_param ** x){
+
+	// clone vector
+	stat_param * x0 = gsl_vector_alloc(num_par);
+	gsl_vector_memcpy(x0, *x);
+
+	// Update to uniform value
+	double c = gsl_vector_get(x0, 2);
+	gsl_vector_set(x0, 0, 1/(sqrt(2*M_PI)*c));
+
+	*x = x0;
+
+	return 0;
+}
+
 int
-runstats_mdlpdf(stat_hist * h, stat_param * x, double t, double * p){
+runstats_mdlpdf(stat_hist * h, stat_param * x, double t, double * p, double * error){
 
 	if ((!x) || (!h))
 		return -1;
 
+	// Determine histogram upper limit
+	//double h_min = gsl_histogram_min(h);
 	double h_max = gsl_histogram_max(h);
 
-	stat_param * x0 = gsl_vector_alloc(p);
-
-	// clone vector
-	gsl_vector_memcpy(x0, x);
-
-	// Update to uniform value
-	double c = gsl_vector_get(x0, 2);
-	gsl_vector_set(x0, 2, 1/(sqrt(2*PI)*c));
+	// create a normalized clone
+	(void)uniparm_copy(&x);
 
 	gsl_integration_workspace * w
 	= gsl_integration_workspace_alloc (1000);
 
-	double result, error;
-	double expected = -4.0;
-
 	gsl_function F;
 	F.function = &func_gaussian;
-	F.params = x0;
+	F.params = x;
 
 	gsl_integration_qags (&F, t, h_max, 0, 1e-7, 1000,
-						w, &result, &error);
+						w, p, error);
 
-	printf ("result          = % .18f\n", result);
-	printf ("exact result    = % .18f\n", expected);
-	printf ("estimated error = % .18f\n", error);
-	printf ("actual error    = % .18f\n", result - expected);
+	printf ("result          = % .18f\n", *p);
+	printf ("estimated error = % .18f\n", *error);
 	printf ("intervals       = %zu\n", w->size);
 
 	gsl_integration_workspace_free (w);
-
-	*p = result;
+	gsl_vector_free(x);
 
 	return 0;
 }
