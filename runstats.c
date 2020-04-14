@@ -279,20 +279,21 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
  * runstats_initparam: inits the parameter vector
  *
  * Arguments: - pointer to pointer to the memory location for storage
+ * 			  - expected center of distribution
  *
  * Return value: success or error code
  */
 int
-runstats_initparam(stat_param ** x){
+runstats_initparam(stat_param ** x, double b){
 
 	/*
 	 * fitting parameter vector and constant init
 	 */
 	*x = gsl_vector_alloc(num_par); /* model parameter vector */
 	/* (Gaussian) fitting model starting parameters, updated through iterations */
-	gsl_vector_set(*x, 0, 80.0);  		/* amplitude */
-	gsl_vector_set(*x, 1, 0.010200); 	/* center */
-	gsl_vector_set(*x, 2, 0.001000); 	/* width */
+	gsl_vector_set(*x, 0, 100.0);  		/* amplitude */
+	gsl_vector_set(*x, 1, b * 1.02); 	/* center */
+	gsl_vector_set(*x, 2, b * 0.01); 	/* width */
 
 	// TODO: return value
 	return 0;
@@ -306,13 +307,13 @@ runstats_initparam(stat_param ** x){
  * Return value: success or error code
  */
 int
-runstats_inithist(stat_hist ** h){
+runstats_inithist(stat_hist ** h, double b){
 	/*
 	 * Histogram parameters, start point, init memory
 	 */
 	size_t n = 300;  /* number of bins to fit */
-	double bin_min = 0.009500;
-	double bin_max = 0.012000;
+	double bin_min = b * 0.90;
+	double bin_max = b * 1.10;
 	/* Allocate memory, histogram data for RTC accumulation */
 	*h = gsl_histogram_alloc (n);
 	// set ranges and reset bins, fixed to n bin count
@@ -464,14 +465,10 @@ uniparm_copy(stat_param ** x){
 }
 
 int
-runstats_mdlpdf(stat_hist * h, stat_param * x, double t, double * p, double * error){
+runstats_mdlpdf(stat_param * x, double a, double b, double * p, double * error){
 
-	if ((!x) || (!h))
+	if (!x)
 		return -1;
-
-	// Determine histogram upper limit
-	//double h_min = gsl_histogram_min(h);
-	double h_max = gsl_histogram_max(h);
 
 	// create a normalized clone
 	(void)uniparm_copy(&x);
@@ -483,7 +480,7 @@ runstats_mdlpdf(stat_hist * h, stat_param * x, double t, double * p, double * er
 	F.function = &func_gaussian;
 	F.params = x;
 
-	gsl_integration_qags (&F, t, h_max, 0, 1e-7, 1000,
+	gsl_integration_qags (&F, a, b, 0, 1e-7, 1000,
 						w, p, error);
 
 	printf ("result          = % .18f\n", *p);

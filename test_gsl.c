@@ -77,8 +77,8 @@ void  verify_histogram(stat_hist * h, stat_param * x, int print){
 }
 
 void test_fitting_setup (){
-	(void)runstats_inithist(&h);
-	(void)runstats_initparam(&x);
+	(void)runstats_inithist (&h, 0.010000);
+	(void)runstats_initparam(&x, 0.010000);
 }
 
 void test_fitting_teardown(){
@@ -171,10 +171,6 @@ uint32_t fitting_check(stat_hist * h, stat_param * x){
 	return now.tv_nsec;
 }
 
-/*
- *  Main test program for non-linear weighted least square fitting
- *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
- */
 START_TEST(fitting_check_random)
 {
 	(void)printf("***** Solver Iteration %d *****\n", _i+1);
@@ -194,10 +190,7 @@ START_TEST(fitting_check_random)
 END_TEST
 
 uint32_t nsecold = 10000000; // 10 ms start point
-/*
- *  Main test program for non-linear weighted least square fitting
- *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
- */
+
 START_TEST(fitting_check_adapt)
 {
 	(void)printf("***** Solver Iteration %d *****\n", _i+1);
@@ -224,7 +217,7 @@ END_TEST
 START_TEST(fitting_check_probability)
 {
 	double p = 0, error = 0;
-	(void)runstats_mdlpdf(h, x, 0.010450, &p, &error);
+	(void)runstats_mdlpdf(x, 0.010450, gsl_histogram_max(h),&p, &error);
 	fflush(stdout);
 
 	ck_assert(p >= 0.5);
@@ -232,6 +225,51 @@ START_TEST(fitting_check_probability)
 
 }
 END_TEST
+
+struct {
+	double exp;
+	double a;
+	double b;
+	double c;
+} merge_bells[5] = {
+	{0.010000, 102, 0.010500, 0.000150},
+	{0.001000, 60, 0.001020, 0.000090},
+	{0.003000,510, 0.003040, 0.000140},
+	{0.000200,154, 0.000220, 0.000030},
+	{0.010000,324, 0.010500, 0.000090}
+};
+
+double merge_avg = 0;
+
+START_TEST(fitting_check_merge)
+{
+
+	stat_hist * h0;
+	stat_param * x0;
+	(void)runstats_inithist (&h0, merge_bells[_i].exp);
+	(void)runstats_initparam(&x0, merge_bells[_i].exp);
+
+	(void)generate_histogram(h0, merge_bells[_i].a, merge_bells[_i].b, merge_bells[_i].c, 0.009); // randomize 0.9%
+
+	(void)fitting_check(h0, x0);
+	verify_histogram(h0,x0, 1);
+
+	(void)gsl_vector_add(x, x0); // add two parameter vectors (central limit theorem)
+
+	merge_avg += gsl_histogram_mean(h0);
+
+	double p = 0, error = 0;
+	(void)runstats_mdlpdf(x, merge_avg, 1.0, &p, &error);
+	fflush(stdout);
+
+	ck_assert(p >= 0.5);
+	ck_assert(error < 0.000005);
+
+	(void)gsl_histogram_free(h0);
+	(void)gsl_vector_free(x0);
+}
+END_TEST
+
 
 /*
  * Fitting test suite
@@ -264,8 +302,9 @@ void test_merge (Suite * s) {
 
 	TCase *tc1 = tcase_create("Probability_merge_test");
 
-//	tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
-//	tcase_add_loop_test(tc1, fitting_check_random, 0, NOITER);
+	// TODO: Teardown print does not work yet -> merge is way higher
+	tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
+	tcase_add_loop_test(tc1, fitting_check_merge, 0, NOITER);
 
     suite_add_tcase(s, tc1);
 
@@ -285,7 +324,7 @@ int main(void)
 
     Suite *s1 = suite_create("Fitting");
     test_fitting(s1);
- //   test_merge(s1);
+    test_merge(s1);
     sr = srunner_create(s1);
 	// No fork needed to keep shared memory across tests
 	srunner_set_fork_status (sr, CK_NOFORK);
