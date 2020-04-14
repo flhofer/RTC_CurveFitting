@@ -21,6 +21,8 @@ struct data
 	size_t n;
 };
 
+size_t generate_histogram(stat_hist *, double, double, double, double rand);
+
 /*
  * tsnorm(): verifies timespec for boundaries + fixes it
  *
@@ -41,7 +43,7 @@ static inline void tsnorm(struct timespec *ts)
 stat_hist * h;
 stat_param * x;
 
-void  print_histogram(stat_hist * h, stat_param * x){
+void  verify_histogram(stat_hist * h, stat_param * x, int print){
 
 	fflush(stdout);
 	fflush(stderr);
@@ -66,20 +68,22 @@ void  print_histogram(stat_hist * h, stat_param * x){
 		double yi = fit_data.y[i];
 		double fi = runstats_gaussian(A, B, C, ti);
 
-		printf("%f %f %f\n", ti, yi, fi);
+		if (print)
+			printf("%f %f %f\n", ti, yi, fi);
+		else
+			ck_assert( abs(yi-fi) <= (A * 0.01) ); // 1% maximum error
 	  }
 	}
 }
 
-
-void test_setup (){
+void test_fitting_setup (){
 	(void)runstats_inithist(&h);
 	(void)runstats_initparam(&x);
 }
 
-void test_teardown(){
+void test_fitting_teardown(){
 
-	print_histogram(h,x);
+	verify_histogram(h,x, 1);
 
 	/*
 	* Free parameter vector and histogram structure
@@ -89,10 +93,16 @@ void test_teardown(){
 }
 
 /*
- * generation of random data -> Gaussian with noise
+ * generate_histogram() : generation of random data -> Gaussian with noise
+ *
+ * Arguments: - pointer to histogram structure
+ * 			  - amplitude  = number of occurences
+ * 			  -	center
+ * 			  -	width
+ *
+ * Return value: - number of generated bins
  */
-// overshadowing h
-size_t generate_histogram(stat_hist * h){
+size_t generate_histogram(stat_hist * h, double a, double b, double c, double rand){
 	size_t n = gsl_histogram_bins(h);
 	{
 		// init random Gaussian noise
@@ -101,10 +111,6 @@ size_t generate_histogram(stat_hist * h){
 		gsl_rng_env_setup ();
 		r = gsl_rng_alloc (T);
 
-		// synthetic Gaussian parameters
-		const double a = 100.0;  	/* amplitude */ // = number of occurences
-		const double b = 0.010500;  /* center */
-		const double c = 0.000150;  /* width */
 
 		/* generate synthetic data with noise */
 		for (size_t i = 0; i < n; ++i)
@@ -118,7 +124,7 @@ size_t generate_histogram(stat_hist * h){
 
 			// compute Gaussian value and random noise
 			double y0 = runstats_gaussian(a, b, c, t);
-			double dy = gsl_ran_gaussian (r, 0.1 * y0);
+			double dy = gsl_ran_gaussian (r, rand * y0);
 
 			// insert into histogram
 			gsl_histogram_accumulate(h, t, y0 + dy);
@@ -128,21 +134,7 @@ size_t generate_histogram(stat_hist * h){
 	return n;
 }
 
-/*
- *  Main test program for non-linear weighted least square fitting
- *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
- */
-START_TEST(fitting_check_random)
-{
-	// do fitting, all except first
-	if (_i)
-		(void)runstats_fithist(&h);
-
-	(void)printf("***** Solver Iteration %d *****\n", _i+1);
-	fflush(stdout);
-
-	(void)generate_histogram(h);
-
+uint32_t fitting_check(stat_hist * h, stat_param * x){
 	// get timestamp
 	int ret;
 	struct timespec now, old;
@@ -176,8 +168,56 @@ START_TEST(fitting_check_random)
 
 		printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
 	}
+	return now.tv_nsec;
+}
+
+/*
+ *  Main test program for non-linear weighted least square fitting
+ *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
+ */
+START_TEST(fitting_check_random)
+{
+	(void)printf("***** Solver Iteration %d *****\n", _i+1);
+	fflush(stdout);
+
+	// do fitting, all except first
+	if (_i)
+		(void)runstats_fithist(&h);
+
+	(void)generate_histogram(h, 100, 0.010500, 0.000150, 0.1);
+
+	uint32_t nsec = fitting_check(h, x);
+
 	// Max 5..4..3..2..1 ms, the closer we get
-	ck_assert_int_le(now.tv_nsec, (NOITER - _i) * 1000000 );
+	ck_assert_int_le(nsec, (NOITER - _i) * 1000000 );
+}
+END_TEST
+
+uint32_t nsecold = 10000000; // 10 ms start point
+/*
+ *  Main test program for non-linear weighted least square fitting
+ *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
+ */
+START_TEST(fitting_check_adapt)
+{
+	(void)printf("***** Solver Iteration %d *****\n", _i+1);
+
+	// do fitting, all except first
+	if (_i)
+		(void)runstats_fithist(&h);
+
+	size_t n = generate_histogram(h, 100, 0.010500, 0.000150, 0.009); // randomize 0.9%
+
+	(void)printf("Number of bins: %lu\n", n);
+	fflush(stdout);
+
+
+	uint32_t nsec = fitting_check(h, x);
+
+	verify_histogram(h,x,0);
+
+	// Max 5..4..3..2..1 ms, the closer we get
+	ck_assert_int_le(nsec, nsecold);
 }
 END_TEST
 
@@ -200,9 +240,32 @@ void test_fitting (Suite * s) {
 
 	TCase *tc1 = tcase_create("Fitting_random");
 
-	tcase_add_unchecked_fixture(tc1, test_setup, test_teardown);
+	tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
 	tcase_add_loop_test(tc1, fitting_check_random, 0, NOITER);
 	tcase_add_test(tc1, fitting_check_probability);
+
+    suite_add_tcase(s, tc1);
+
+	TCase *tc2 = tcase_create("Fitting_adaptation");
+
+	tcase_add_unchecked_fixture(tc2, test_fitting_setup, test_fitting_teardown);
+	tcase_add_loop_test(tc2, fitting_check_adapt, 0, NOITER);
+	tcase_add_test(tc2, fitting_check_probability);
+
+    suite_add_tcase(s, tc2);
+
+	return;
+}
+
+/*
+ * Merging test suite
+ */
+void test_merge (Suite * s) {
+
+	TCase *tc1 = tcase_create("Probability_merge_test");
+
+//	tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
+//	tcase_add_loop_test(tc1, fitting_check_random, 0, NOITER);
 
     suite_add_tcase(s, tc1);
 
@@ -222,12 +285,16 @@ int main(void)
 
     Suite *s1 = suite_create("Fitting");
     test_fitting(s1);
-	sr = srunner_create(s1);
+ //   test_merge(s1);
+    sr = srunner_create(s1);
 	// No fork needed to keep shared memory across tests
 	srunner_set_fork_status (sr, CK_NOFORK);
     srunner_run_all(sr, CK_NORMAL);
     nf += srunner_ntests_failed(sr);
     srunner_free(sr);
+
+	fflush(stdout);
+	fflush(stderr);
 
     return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
