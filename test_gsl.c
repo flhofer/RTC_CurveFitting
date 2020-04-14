@@ -39,21 +39,71 @@ static inline void tsnorm(struct timespec *ts)
 
 #define NOITER 5 // number of sampling iterations for fitting
 
+stat_hist * h;
+stat_param * x;
+
+void test_setup (){
+	(void)runstats_inithist(&h);
+	(void)runstats_initparam(&x);
+}
+
+void test_teardown(){
+	/*
+	* Free parameter vector and histogram structure
+	*/
+	gsl_vector_free(x);
+	gsl_histogram_free (h);
+}
+
+/*
+ * generation of random data -> Gaussian with noise
+ */
+// overshadowing h
+size_t generate_histogram(stat_hist * h){
+	size_t n = gsl_histogram_bins(h);
+	{
+		// init random Gaussian noise
+		const gsl_rng_type * T = gsl_rng_default;
+		gsl_rng * r;
+		gsl_rng_env_setup ();
+		r = gsl_rng_alloc (T);
+
+		// synthetic Gaussian parameters
+		const double a = 100.0;  	/* amplitude */ // = number of occurences
+		const double b = 0.010500;  /* center */
+		const double c = 0.000150;  /* width */
+
+		/* generate synthetic data with noise */
+		for (size_t i = 0; i < n; ++i)
+		  {
+			// get range of bin
+			double t,t1;
+			(void)gsl_histogram_get_range(h, i, &t, &t1);
+
+			// take average value
+			t= (t+t1)/2;
+
+			// compute Gaussian value and random noise
+			double y0 = runstats_gaussian(a, b, c, t);
+			double dy = gsl_ran_gaussian (r, 0.1 * y0);
+
+			// insert into histogram
+			gsl_histogram_accumulate(h, t, y0 + dy);
+		  }
+		gsl_rng_free(r);
+	}
+	return n;
+}
+
+
 /*
  *  Main test program for non-linear weighted least square fitting
  *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
  */
-
 START_TEST(fitting_check_random)
 {
-	stat_hist * h;
-	stat_param * x;
-
-	(void)runstats_inithist(&h);
-	(void)runstats_initparam(&x);
 
 	size_t n;
-
 	// Solver iterations start here
 	for ( int run_iter=0; run_iter < NOITER; run_iter++) {
 
@@ -63,42 +113,8 @@ START_TEST(fitting_check_random)
 
 		(void)printf("***** Solver Iteration %d *****\n", run_iter+1);
 		fflush(stdout);
-		n = gsl_histogram_bins(h);
-		/*
-		 * generation of random data -> Gaussian with noise
-		 */
-		{
-			// init random Gaussian noise
-			const gsl_rng_type * T = gsl_rng_default;
-			gsl_rng * r;
-			gsl_rng_env_setup ();
-			r = gsl_rng_alloc (T);
 
-			// synthetic Gaussian parameters
-			const double a = 100.0;  	/* amplitude */ // = number of occurences
-			const double b = 0.010500;  /* center */
-			const double c = 0.000150;  /* width */
-
-			/* generate synthetic data with noise */
-			for (size_t i = 0; i < n; ++i)
-			  {
-				// get range of bin
-				double t,t1;
-				(void)gsl_histogram_get_range(h, i, &t, &t1);
-
-				// take average value
-				t= (t+t1)/2;
-
-				// compute Gaussian value and random noise
-				double y0 = runstats_gaussian(a, b, c, t);
-				double dy = gsl_ran_gaussian (r, 0.1 * y0);
-
-				// insert into histogram
-				gsl_histogram_accumulate(h, t, y0 + dy);
-			  }
-			gsl_rng_free(r);
-		}
-
+		n = generate_histogram(h);
 
 		// get timestamp
 		int ret;
@@ -162,30 +178,41 @@ START_TEST(fitting_check_random)
 	  }
 	}
 
-	double p = 0, error = 0;
-	(void)runstats_mdlpdf(h, x, 0.010400, &p, &error);
-
-	/*
-	* Free parameter vector and histogram structure
-	*/
-	gsl_vector_free(x);
-	gsl_histogram_free (h);
 
 }
 END_TEST
 
+START_TEST(fitting_check_probability)
+{
+	double p = 0, error = 0;
+	(void)runstats_mdlpdf(h, x, 0.010450, &p, &error);
+	fflush(stdout);
+
+	ck_assert(p >= 0.5);
+	ck_assert(error < 0.000005);
+
+}
+END_TEST
+
+/*
+ * Fitting test suite
+ */
 void test_fitting (Suite * s) {
 
 	TCase *tc1 = tcase_create("Fitting_random");
 
+	tcase_add_unchecked_fixture(tc1, test_setup, test_teardown);
 	tcase_add_test(tc1, fitting_check_random);
+	tcase_add_test(tc1, fitting_check_probability);
 
     suite_add_tcase(s, tc1);
 
 	return;
 }
 
-
+/*
+ * Setup check runners and return values
+ */
 int main(void)
 {
 	// init pseudo-random tables
@@ -198,10 +225,10 @@ int main(void)
     test_fitting(s1);
 	sr = srunner_create(s1);
 	// uncomment below for debugging
-//	srunner_set_fork_status (sr, CK_NOFORK);
+	// srunner_set_fork_status (sr, CK_NOFORK);
     srunner_run_all(sr, CK_NORMAL);
     nf += srunner_ntests_failed(sr);
     srunner_free(sr);
 
-    return nf == 0 ? 0 : 1;
+    return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
