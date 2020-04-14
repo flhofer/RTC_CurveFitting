@@ -42,6 +42,9 @@ stat_hist * h;
 stat_param * x;
 
 void  print_histogram(stat_hist * h, stat_param * x){
+
+	fflush(stdout);
+	fflush(stderr);
 	/*
 	* print resulting data and model
 	* - results vs reality data points
@@ -173,7 +176,8 @@ START_TEST(fitting_check_random)
 
 		printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
 	}
-	//gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
+	// Max 5..4..3..2..1 ms, the closer we get
+	ck_assert_int_le(now.tv_nsec, (NOITER - _i) * 1000000 );
 }
 END_TEST
 
@@ -219,8 +223,8 @@ int main(void)
     Suite *s1 = suite_create("Fitting");
     test_fitting(s1);
 	sr = srunner_create(s1);
-	// uncomment below for debugging
-	// srunner_set_fork_status (sr, CK_NOFORK);
+	// No fork needed to keep shared memory across tests
+	srunner_set_fork_status (sr, CK_NOFORK);
     srunner_run_all(sr, CK_NORMAL);
     nf += srunner_ntests_failed(sr);
     srunner_free(sr);
