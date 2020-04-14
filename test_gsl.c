@@ -22,12 +22,11 @@ struct data
 };
 
 /*
-/// tsnorm(): verifies timespec for boundaries + fixes it
-///
-/// Arguments: pointer to timespec to check
-///
-/// Return value: -
+ * tsnorm(): verifies timespec for boundaries + fixes it
  *
+ * Arguments: pointer to timespec to check
+ *
+ * Return value: -
  */
 static inline void tsnorm(struct timespec *ts)
 {
@@ -42,12 +41,43 @@ static inline void tsnorm(struct timespec *ts)
 stat_hist * h;
 stat_param * x;
 
+void  print_histogram(stat_hist * h, stat_param * x){
+	/*
+	* print resulting data and model
+	* - results vs reality data points
+	*/
+	{
+	struct data fit_data;
+	// pass histogram to fitting structure
+	fit_data.t = h->range;
+	fit_data.y = h->bin;
+	fit_data.n = h->n;
+
+	double A = gsl_vector_get(x, 0);
+	double B = gsl_vector_get(x, 1);
+	double C = gsl_vector_get(x, 2);
+
+	for (size_t i = 0; i < fit_data.n; ++i)
+	  {
+		double ti = fit_data.t[i];
+		double yi = fit_data.y[i];
+		double fi = runstats_gaussian(A, B, C, ti);
+
+		printf("%f %f %f\n", ti, yi, fi);
+	  }
+	}
+}
+
+
 void test_setup (){
 	(void)runstats_inithist(&h);
 	(void)runstats_initparam(&x);
 }
 
 void test_teardown(){
+
+	print_histogram(h,x);
+
 	/*
 	* Free parameter vector and histogram structure
 	*/
@@ -95,90 +125,55 @@ size_t generate_histogram(stat_hist * h){
 	return n;
 }
 
-
 /*
  *  Main test program for non-linear weighted least square fitting
  *  initial source taken from https://www.gnu.org/software/gsl/doc/html/nls.html#weighted-nonlinear-least-squares
  */
 START_TEST(fitting_check_random)
 {
+	// do fitting, all except first
+	if (_i)
+		(void)runstats_fithist(&h);
 
-	size_t n;
-	// Solver iterations start here
-	for ( int run_iter=0; run_iter < NOITER; run_iter++) {
+	(void)printf("***** Solver Iteration %d *****\n", _i+1);
+	fflush(stdout);
 
-		// do fitting, all except first
-		if (run_iter)
-			(void)runstats_fithist(&h);
+	(void)generate_histogram(h);
 
-		(void)printf("***** Solver Iteration %d *****\n", run_iter+1);
-		fflush(stdout);
-
-		n = generate_histogram(h);
-
-		// get timestamp
-		int ret;
-		struct timespec now, old;
-		{
-
-			// get clock, use it as a future reference for update time TIMER_ABS*
-			ret = clock_gettime(CLOCK_MONOTONIC, &old);
-			if (0 != ret) {
-				if (EINTR != ret)
-					printf("clock_gettime() failed: %s", strerror(errno));
-			}
-		}
-
-		/*
-		* Call solver
-		*/
-		(void)runstats_solvehist(h,x);
-
-		// update timestamp
-		{
-			ret = clock_gettime(CLOCK_MONOTONIC, &now);
-			if (0 != ret) {
-				if (EINTR != ret)
-					printf("clock_gettime() failed: %s", strerror(errno));
-			}
-
-			// compute difference -> time needed
-			now.tv_sec -= old.tv_sec;
-			now.tv_nsec -= old.tv_nsec;
-			tsnorm(&now);
-
-			printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
-		}
-
-	    //gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
-
-	}
-	/*
-	* print resulting data and model
-	* - results vs reality data points
-	*/
+	// get timestamp
+	int ret;
+	struct timespec now, old;
 	{
-	struct data fit_data;
-	// pass histogram to fitting structure
-	fit_data.t = h->range;
-	fit_data.y = h->bin;
-	fit_data.n = h->n;
 
-	double A = gsl_vector_get(x, 0);
-	double B = gsl_vector_get(x, 1);
-	double C = gsl_vector_get(x, 2);
-
-	for (size_t i = 0; i < n; ++i)
-	  {
-		double ti = fit_data.t[i];
-		double yi = fit_data.y[i];
-		double fi = runstats_gaussian(A, B, C, ti);
-
-		printf("%f %f %f\n", ti, yi, fi);
-	  }
+		// get clock, use it as a future reference for update time TIMER_ABS*
+		ret = clock_gettime(CLOCK_MONOTONIC, &old);
+		if (0 != ret) {
+			if (EINTR != ret)
+				printf("clock_gettime() failed: %s", strerror(errno));
+		}
 	}
 
+	/*
+	* Call solver
+	*/
+	(void)runstats_solvehist(h,x);
 
+	// update timestamp
+	{
+		ret = clock_gettime(CLOCK_MONOTONIC, &now);
+		if (0 != ret) {
+			if (EINTR != ret)
+				printf("clock_gettime() failed: %s", strerror(errno));
+		}
+
+		// compute difference -> time needed
+		now.tv_sec -= old.tv_sec;
+		now.tv_nsec -= old.tv_nsec;
+		tsnorm(&now);
+
+		printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
+	}
+	//gsl_histogram_fprintf (stdout, h, "%3.05f", "%3.05f");
 }
 END_TEST
 
@@ -202,7 +197,7 @@ void test_fitting (Suite * s) {
 	TCase *tc1 = tcase_create("Fitting_random");
 
 	tcase_add_unchecked_fixture(tc1, test_setup, test_teardown);
-	tcase_add_test(tc1, fitting_check_random);
+	tcase_add_loop_test(tc1, fitting_check_random, 0, NOITER);
 	tcase_add_test(tc1, fitting_check_probability);
 
     suite_add_tcase(s, tc1);
