@@ -14,13 +14,6 @@
 #define USEC_PER_SEC		1000000
 #define NSEC_PER_SEC		1000000000
 
-struct data
-{
-	double *t;
-	double *y;
-	size_t n;
-};
-
 size_t generate_histogram(stat_hist *, double, double, double, double rand);
 
 /*
@@ -52,7 +45,7 @@ void  verify_histogram(stat_hist * h, stat_param * x, int print){
 	* - results vs reality data points
 	*/
 	{
-	struct data fit_data = {
+	struct stat_data fit_data = {
 			h->range,
 			h->bin,
 			h->n};

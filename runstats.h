@@ -14,6 +14,13 @@
 // types to abstract and export information
 typedef gsl_histogram stat_hist;
 typedef gsl_vector stat_param;
+struct stat_data
+	{
+		double *t;
+		double *y;
+		size_t n;
+	};
+
 
 int runstats_initparam(stat_param ** x, double b);	// init parameter vector
 int runstats_inithist(stat_hist ** h, double b);	// init histogram data structure

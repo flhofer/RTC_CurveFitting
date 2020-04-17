@@ -25,12 +25,6 @@
 
 const size_t num_par = 3;   /* number of model parameters, = polynomial or function size */
 
-struct data
-{
-	double *t;
-	double *y;
-	size_t n;
-};
 
 /*
  *  runstats_gaussian(): function to calculate Normal (Gaussian) distribution values
@@ -81,7 +75,7 @@ func_gaussian (double x, void * params)
 static int
 func_f (const gsl_vector * x, void *params, gsl_vector * f)
 {
-	struct data *d = (struct data *) params;
+	struct stat_data *d = (struct stat_data *) params;
 	double a = gsl_vector_get(x, 0);
 	double b = gsl_vector_get(x, 1);
 	double c = gsl_vector_get(x, 2);
@@ -111,7 +105,7 @@ func_f (const gsl_vector * x, void *params, gsl_vector * f)
 static int
 func_df (const gsl_vector * x, void *params, gsl_matrix * J)
 {
-	struct data *d = (struct data *) params;
+	struct stat_data *d = (struct stat_data *) params;
 	double a = gsl_vector_get(x, 0);
 	double b = gsl_vector_get(x, 1);
 	double c = gsl_vector_get(x, 2);
@@ -145,7 +139,7 @@ static int
 func_fvv (const gsl_vector * x, const gsl_vector * v,
           void *params, gsl_vector * fvv)
 {
-	struct data *d = (struct data *) params;
+	struct stat_data *d = (struct stat_data *) params;
 	double a = gsl_vector_get(x, 0);
 	double b = gsl_vector_get(x, 1);
 	double c = gsl_vector_get(x, 2);
@@ -200,7 +194,7 @@ callback(const size_t iter, void *params,
 	(void) params; /* not used */
 
 	/* compute reciprocal condition number of J(x) */
-	gsl_multifit_nlinear_rcond(&rcond, w);
+	(void)gsl_multifit_nlinear_rcond(&rcond, w);
 
 	fprintf(stderr, "iter %2zu: a = %.4f, b = %.4f, c = %.4f, |a|/|v| = %.4f cond(J) = %8.4f, |f(x)| = %.4f\n",
 		  iter,
@@ -387,7 +381,7 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 		return -1;
 
 	// pass histogram to fitting structure
-	struct data fit_data = {
+	struct stat_data fit_data = {
 			h->range,
 			h->bin,
 			h->n};
