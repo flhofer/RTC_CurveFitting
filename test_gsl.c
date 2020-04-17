@@ -204,7 +204,7 @@ START_TEST(fitting_check_adapt)
 	if (_i)
 		(void)runstats_fithist(&h);
 
-	size_t n = generate_histogram(h, 100, 0.010500, 0.000150, 0.009); // randomize 0.9%
+	size_t n = generate_histogram(h, 100, 0.010500, 0.000150, 0.0009); // randomize 0.9%
 
 	(void)printf("Number of bins: %lu\n", n);
 	fflush(stdout);
@@ -212,8 +212,7 @@ START_TEST(fitting_check_adapt)
 
 	uint32_t nsec = fitting_check(h, x);
 
-	//verify_histogram(h,x,0);
-	verify_histogram(h,x, 1);
+	verify_histogram(h,x,0);
 
 	// Max 5..4..3..2..1 ms, the closer we get
 	ck_assert_int_le(nsec, nsecold);

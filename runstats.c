@@ -11,7 +11,6 @@
 
 #include "runstats.h"
 
-
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit_nlinear.h>
@@ -25,8 +24,9 @@
 
 #include "error.h"
 
-const size_t num_par = 3;   /* number of model parameters, = polynomial or function size */
+#define NUMINT 20
 
+const size_t num_par = 3;   /* number of model parameters, = polynomial or function size */
 
 /*
  *  runstats_gaussian(): function to calculate Normal (Gaussian) distribution values
@@ -199,8 +199,7 @@ callback(const size_t iter, void *params,
 	/* compute reciprocal condition number of J(x) */
 	int ret;
 	if ((ret = gsl_multifit_nlinear_rcond(&rcond, w)))
-		err_msg("failure in Jacobian comptuation: %s", gsl_strerror(ret));
-
+		err_msg("failure in Jacobian computation: %s", gsl_strerror(ret));
 
 	fprintf(stderr, "iter %2zu: a = %.4f, b = %.4f, c = %.4f, |a|/|v| = %.4f cond(J) = %8.4f, |f(x)| = %.4f\n",
 		  iter,
@@ -220,12 +219,14 @@ callback(const size_t iter, void *params,
  * 			   - GSL fdf function parameters
  * 			   - GSL fdf parameters
  *
- *  Return value: - none
+ *  Return value: - status, success or error in computing value
  */
-static void
+static int
 solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
              gsl_multifit_nlinear_parameters *params)
 {
+	// x, fdf and params have been checked
+
 	const gsl_multifit_nlinear_type *T = gsl_multifit_nlinear_trust;
 	const size_t max_iter = 40;  // originally set to 200
 	const double xtol = 1.0e-64; // originally set to -8
@@ -239,7 +240,7 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 
 	if (!work){
 		err_msg("Unable to allocate memory for workspace");
-		return;
+		return GSL_ENOMEM;
 	}
 
 	gsl_vector * f = gsl_multifit_nlinear_residual(work);
@@ -262,15 +263,21 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 									  NULL, &info, work);
 
 		/* store final cost = x^T*x */
-		if ((ret = gsl_blas_ddot(f, f, &chisq)))
+		if ((ret = gsl_blas_ddot(f, f, &chisq))){
 			err_msg("unable to compute scalar product: %s", gsl_strerror(ret));
+			return ret;
+		}
 
 		/* store cond(J(x)) */
-		if ((ret = gsl_multifit_nlinear_rcond(&rcond, work)))
+		if ((ret = gsl_multifit_nlinear_rcond(&rcond, work))){
 			err_msg("unable to compute reciprocal condition number : %s", gsl_strerror(ret));
+			return ret;
+		}
 
-		if ((ret = gsl_vector_memcpy(x, y)))
+		if ((ret = gsl_vector_memcpy(x, y))){
 			err_msg("unable to copy vector: %s", gsl_strerror(ret));
+			return ret;
+		}
 
 #ifdef DEBUG
 		/* print summary */
@@ -289,9 +296,11 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 #endif
 	}
 	else
-		err_msg("");
+		err_msg("failed to initialize solver: %s", gsl_strerror(ret));
 
 	gsl_multifit_nlinear_free(work);
+
+	return ret;
 }
 
 /*
@@ -309,12 +318,17 @@ runstats_initparam(stat_param ** x, double b){
 	 * fitting parameter vector and constant init
 	 */
 	*x = gsl_vector_alloc(num_par); /* model parameter vector */
+	if (!*x){
+		err_msg("Unable to allocate memory for vector");
+		return GSL_ENOMEM;
+	}
+
 	/* (Gaussian) fitting model starting parameters, updated through iterations */
 	gsl_vector_set(*x, 0, 100.0);  		/* amplitude */
 	gsl_vector_set(*x, 1, b * 1.02); 	/* center */
 	gsl_vector_set(*x, 2, b * 0.01); 	/* width */
 
-	return ((*x == NULL) ? GSL_FAILURE : GSL_SUCCESS);
+	return GSL_SUCCESS;
 }
 
 /*
@@ -326,20 +340,24 @@ runstats_initparam(stat_param ** x, double b){
  */
 int
 runstats_inithist(stat_hist ** h, double b){
-	/*
-	 * Histogram parameters, start point, init memory
-	 */
-	size_t n = 300;  /* number of bins to fit */
-	double bin_min = b * 0.70; // use +-30% range
+
+	size_t n = 300;				// number of bins to fit
+	double bin_min = b * 0.70;	// use +-30% range
 	double bin_max = b * 1.30;
+
 	/* Allocate memory, histogram data for RTC accumulation */
 	*h = gsl_histogram_alloc (n);
+	if (!*h){
+		err_msg("Unable to allocate memory for histogram");
+		return GSL_ENOMEM;
+	}
+
 	// set ranges and reset bins, fixed to n bin count
 	int ret;
 	if ((ret = gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max)))
 		err_msg("unable to initialize histogram bins: %s", gsl_strerror(ret));
 
-	return ((*h == NULL || ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
+	return ((ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
 /*
@@ -359,6 +377,9 @@ runstats_fithist(stat_hist **h)
  *
  */
 {
+	if (!h || !*h)
+		return GSL_EINVAL;
+
 	// update bin range
 
 	// get parameters and free histogram
@@ -379,9 +400,12 @@ runstats_fithist(stat_hist **h)
 		gsl_histogram_free (*h);
 		n = new_n;
 		*h = gsl_histogram_alloc (n);
-		// set ranges and reset bins, fixed to n bin count
+		if (!*h){
+			err_msg("Unable to allocate memory for histogram");
+			return GSL_ENOMEM;
+		}
+
 	}
-	// TODO: if the same size-> floating average filter?
 
 	// adjust margins bin limits
 	double bin_min = mn - ((double)n/2.0)*W;
@@ -390,7 +414,7 @@ runstats_fithist(stat_hist **h)
 	if ((ret = gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max)))
 		err_msg("unable to initialize histogram bins: %s", gsl_strerror(ret));
 
-	return ((*h == NULL || ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
+	return ((ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
 /*
@@ -405,7 +429,7 @@ int
 runstats_solvehist(stat_hist * h, stat_param * x)
 {
 	if ((!x) || (!h))
-		return -1;
+		return GSL_EINVAL;
 
 	// pass histogram to fitting structure
 	struct stat_data fit_data = {
@@ -416,33 +440,29 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 	/*
 	 * 	Starting from here, fitting method setup, TRS
 	 */
-	{
-		// function definition setup for solver ->
-		// pointers to f (model function), df (model differential), and fvv (model acceleration)
-		gsl_multifit_nlinear_fdf fdf;
-		// function solver parameters for TRS problem
-		gsl_multifit_nlinear_parameters fdf_params =
-			gsl_multifit_nlinear_default_parameters();
 
-		/* define function parameters to be minimized */
-		fdf.f = func_f;			// fitting test to Gaussian
-		fdf.df = func_df;		// first derivative Gaussian
-		fdf.fvv = func_fvv;		// acceleration method function for Gaussian
-		fdf.n = fit_data.n;		// number of functions => fn(tn) = yn
-		fdf.p = num_par;		// number of independent variables in model
-		fdf.params = &fit_data;	// data-vector for the n functions
+	// function definition setup for solver ->
+	// pointers to f (model function), df (model differential), and fvv (model acceleration)
+	gsl_multifit_nlinear_fdf fdf;
+	// function solver parameters for TRS problem
+	gsl_multifit_nlinear_parameters fdf_params =
+		gsl_multifit_nlinear_default_parameters();
 
-		// enable Levenberg-Marquardt Geodesic acceleration method for trust-region subproblem
-		fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
+	/* define function parameters to be minimized */
+	fdf.f = func_f;			// fitting test to Gaussian
+	fdf.df = func_df;		// first derivative Gaussian
+	fdf.fvv = func_fvv;		// acceleration method function for Gaussian
+	fdf.n = fit_data.n;		// number of functions => fn(tn) = yn
+	fdf.p = num_par;		// number of independent variables in model
+	fdf.params = &fit_data;	// data-vector for the n functions
 
-		/*
-		* Call solver
-		*/
-		solve_system(x, &fdf, &fdf_params);
+	// enable Levenberg-Marquardt Geodesic acceleration method for trust-region subproblem
+	fdf_params.trs = gsl_multifit_nlinear_trs_lmaccel;
 
-	}
-
-	return 0;
+	/*
+	* Call solver
+	*/
+	return solve_system(x, &fdf, &fdf_params);
 }
 
 /*
@@ -456,9 +476,19 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 static int
 uniparm_copy(stat_param ** x){
 
+	if (!x || !*x)
+		return GSL_EINVAL;
+
 	// clone vector
 	stat_param * x0 = gsl_vector_alloc(num_par);
-	(void)gsl_vector_memcpy(x0, *x);
+	if (!x0){
+		err_msg("unable to allocate parameter vector");
+		return GSL_ENOMEM;
+	}
+
+	int ret;
+	if ((ret = gsl_vector_memcpy(x0, *x)))
+		err_msg("unable to copy parameter vector : %s", gsl_strerror(ret));
 
 	// Update to uniform value
 	double c = gsl_vector_get(x0, 2);
@@ -466,34 +496,45 @@ uniparm_copy(stat_param ** x){
 
 	*x = x0;
 
-	return 0;
+	return ((ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
 int
 runstats_mdlpdf(stat_param * x, double a, double b, double * p, double * error){
 
 	if (!x)
-		return -1;
+		return GSL_EINVAL;
+
+	int ret;
 
 	// create a normalized clone
-	(void)uniparm_copy(&x);
+	if ((ret = uniparm_copy(&x))) {
+		err_msg("unable to clone values: %s", gsl_strerror(ret));
+		return ret;
+	}
 
 	gsl_integration_workspace * w
-	= gsl_integration_workspace_alloc (1000);
+		= gsl_integration_workspace_alloc (NUMINT);
+	if (!w){
+		err_msg("unable to allocate workspace memory");
+		gsl_vector_free(x);
+		return GSL_ENOMEM;
+	}
 
-	gsl_function F;
-	F.function = &func_gaussian;
-	F.params = x;
+	gsl_function F = { &func_gaussian, x }; // function , parameters
 
-	gsl_integration_qags (&F, a, b, 0, 1e-7, 1000,
-						w, p, error);
+	if ((ret = gsl_integration_qags (&F, a, b, 0, 1e-7, NUMINT,
+						w, p, error)))
+		err_msg ("curve integration failed : %s", gsl_strerror(ret));
 
-	printf ("result          = % .18f\n", *p);
-	printf ("estimated error = % .18f\n", *error);
+#ifdef DEBUG
+	printf ("result          = %.18f\n", *p);
+	printf ("estimated error = %.18f\n", *error);
 	printf ("intervals       = %zu\n", w->size);
+#endif
 
 	gsl_integration_workspace_free (w);
 	gsl_vector_free(x);
 
-	return 0;
+	return ((ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
