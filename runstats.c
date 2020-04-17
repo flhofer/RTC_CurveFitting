@@ -312,8 +312,8 @@ runstats_inithist(stat_hist ** h, double b){
 	 * Histogram parameters, start point, init memory
 	 */
 	size_t n = 300;  /* number of bins to fit */
-	double bin_min = b * 0.90;
-	double bin_max = b * 1.10;
+	double bin_min = b * 0.70; // use +-30% range
+	double bin_max = b * 1.30;
 	/* Allocate memory, histogram data for RTC accumulation */
 	*h = gsl_histogram_alloc (n);
 	// set ranges and reset bins, fixed to n bin count
@@ -336,6 +336,7 @@ runstats_fithist(stat_hist **h)
  * Scott, D. 1979.
  * On optimal and data-based histograms.
  * Biometrika, 66:605-610.
+ * https://www.fmrib.ox.ac.uk/datasets/techrep/tr00mj2/tr00mj2/node24.html
  *
  */
 {
@@ -386,10 +387,10 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 		return -1;
 
 	// pass histogram to fitting structure
-	struct data fit_data;
-	fit_data.t = h->range;
-	fit_data.y = h->bin;
-	fit_data.n = h->n;
+	struct data fit_data = {
+			h->range,
+			h->bin,
+			h->n};
 
 	/*
 	 * 	Starting from here, fitting method setup, TRS
@@ -424,23 +425,6 @@ runstats_solvehist(stat_hist * h, stat_param * x)
 }
 
 /*
- * uniparm_sum: sum values and uniform parameters to area of 1
- *
- * Arguments: - pointer to pointer to parameters
- *
- * Return value: success or error code
- */
-static int
-uniparm_sum(stat_param * x, const stat_param * x1){
-
-	int ret = gsl_vector_add(x,x1);
-	double c = gsl_vector_get(x, 2);
-	gsl_vector_set(x, 0, 1/(sqrt(2*M_PI)*c));
-
-	return ret;
-}
-
-/*
  * uniparm_copy: uniform parameters to area of 1
  *				 replaces the reference with a uniform copy, to be freed
  *
@@ -453,7 +437,7 @@ uniparm_copy(stat_param ** x){
 
 	// clone vector
 	stat_param * x0 = gsl_vector_alloc(num_par);
-	gsl_vector_memcpy(x0, *x);
+	(void)gsl_vector_memcpy(x0, *x);
 
 	// Update to uniform value
 	double c = gsl_vector_get(x0, 2);

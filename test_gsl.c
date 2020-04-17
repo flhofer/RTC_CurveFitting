@@ -52,11 +52,10 @@ void  verify_histogram(stat_hist * h, stat_param * x, int print){
 	* - results vs reality data points
 	*/
 	{
-	struct data fit_data;
-	// pass histogram to fitting structure
-	fit_data.t = h->range;
-	fit_data.y = h->bin;
-	fit_data.n = h->n;
+	struct data fit_data = {
+			h->range,
+			h->bin,
+			h->n};
 
 	double A = gsl_vector_get(x, 0);
 	double B = gsl_vector_get(x, 1);
@@ -74,6 +73,7 @@ void  verify_histogram(stat_hist * h, stat_param * x, int print){
 			ck_assert( abs(yi-fi) <= (A * 0.01) ); // 1% maximum error
 	  }
 	}
+	fflush(stdout);
 }
 
 void test_fitting_setup (){
@@ -90,6 +90,18 @@ void test_fitting_teardown(){
 	*/
 	gsl_vector_free(x);
 	gsl_histogram_free (h);
+}
+
+void test_merge_setup (){
+	(void)runstats_initparam(&x, 0.010000);
+}
+
+void test_merge_teardown(){
+	/*
+	* Free parameter vector and histogram structure
+	*/
+	gsl_vector_free(x);
+
 }
 
 /*
@@ -135,7 +147,7 @@ size_t generate_histogram(stat_hist * h, double a, double b, double c, double ra
 }
 
 uint32_t fitting_check(stat_hist * h, stat_param * x){
-	// get timestamp
+	// get time stamp
 	int ret;
 	struct timespec now, old;
 	{
@@ -153,7 +165,7 @@ uint32_t fitting_check(stat_hist * h, stat_param * x){
 	*/
 	(void)runstats_solvehist(h,x);
 
-	// update timestamp
+	// update time stamp
 	{
 		ret = clock_gettime(CLOCK_MONOTONIC, &now);
 		if (0 != ret) {
@@ -207,7 +219,8 @@ START_TEST(fitting_check_adapt)
 
 	uint32_t nsec = fitting_check(h, x);
 
-	verify_histogram(h,x,0);
+	//verify_histogram(h,x,0);
+	verify_histogram(h,x, 1);
 
 	// Max 5..4..3..2..1 ms, the closer we get
 	ck_assert_int_le(nsec, nsecold);
@@ -231,13 +244,13 @@ struct {
 	double a;
 	double b;
 	double c;
-} merge_bells[5] = {
-	{0.010000, 102, 0.010500, 0.000150},
-	{0.001000, 60, 0.001020, 0.000090},
-	{0.003000,510, 0.003040, 0.000140},
-	{0.000200,154, 0.000220, 0.000030},
-	{0.010000,324, 0.010500, 0.000090}
-};
+	} merge_bells[5] = {
+		{0.010000, 102, 0.010500, 0.000150},
+		{0.001000, 60, 0.001020, 0.000090},
+		{0.003000,510, 0.003040, 0.000140},
+		{0.000200,154, 0.000220, 0.000030},
+		{0.010000,324, 0.010500, 0.000090}
+		};
 
 double merge_avg = 0;
 
@@ -303,7 +316,7 @@ void test_merge (Suite * s) {
 	TCase *tc1 = tcase_create("Probability_merge_test");
 
 	// TODO: Teardown print does not work yet -> merge is way higher
-	tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
+	tcase_add_unchecked_fixture(tc1, test_merge_setup, test_merge_teardown);
 	tcase_add_loop_test(tc1, fitting_check_merge, 0, NOITER);
 
     suite_add_tcase(s, tc1);
