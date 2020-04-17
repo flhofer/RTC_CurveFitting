@@ -235,48 +235,61 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 	const size_t n = fdf->n;
 	const size_t p = fdf->p;
 	gsl_multifit_nlinear_workspace *work =
-	gsl_multifit_nlinear_alloc(T, params, n, p);
+			gsl_multifit_nlinear_alloc(T, params, n, p);
+
+	if (!work){
+		err_msg("Unable to allocate memory for workspace");
+		return;
+	}
+
 	gsl_vector * f = gsl_multifit_nlinear_residual(work);
 	gsl_vector * y = gsl_multifit_nlinear_position(work);
-	int info;
+	int info, ret;
 	double chisq0, chisq, rcond;
 
 	/* initialize solver */
-	gsl_multifit_nlinear_init(x, fdf, work);
+	if (!(ret = gsl_multifit_nlinear_init(x, fdf, work))){
+		/* store initial cost */
+		gsl_blas_ddot(f, f, &chisq0);
 
-	/* store initial cost */
-	gsl_blas_ddot(f, f, &chisq0);
-
-	/* iterate until convergence */
-	gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol,
+		/* iterate until convergence */
+		gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol,
 #ifdef DEBUG
-							  callback,
+									  callback,
 #else
-							  NULL,
+									  NULL,
 #endif
-							  NULL, &info, work);
+									  NULL, &info, work);
 
-	/* store final cost */
-	gsl_blas_ddot(f, f, &chisq);
+		/* store final cost = x^T*x */
+		if ((ret = gsl_blas_ddot(f, f, &chisq)))
+			err_msg("unable to compute scalar product: %s", gsl_strerror(ret));
 
-	/* store cond(J(x)) */
-	gsl_multifit_nlinear_rcond(&rcond, work);
+		/* store cond(J(x)) */
+		if ((ret = gsl_multifit_nlinear_rcond(&rcond, work)))
+			err_msg("unable to compute reciprocal condition number : %s", gsl_strerror(ret));
 
-	gsl_vector_memcpy(x, y);
+		if ((ret = gsl_vector_memcpy(x, y)))
+			err_msg("unable to copy vector: %s", gsl_strerror(ret));
 
-	/* print summary */
-	fflush(stderr);
-	fflush(stdout);
-	fprintf(stderr, "NITER         = %zu\n", gsl_multifit_nlinear_niter(work));
-	fprintf(stderr, "NFEV          = %zu\n", fdf->nevalf);
-	fprintf(stderr, "NJEV          = %zu\n", fdf->nevaldf);
-	fprintf(stderr, "NAEV          = %zu\n", fdf->nevalfvv);
-	fprintf(stderr, "initial cost  = %.12e\n", chisq0);
-	fprintf(stderr, "final cost    = %.12e\n", chisq);
-	fprintf(stderr, "final x       = (%.12e, %.12e, %12e)\n",
-		  gsl_vector_get(x, 0), gsl_vector_get(x, 1), gsl_vector_get(x, 2));
-	fprintf(stderr, "final cond(J) = %.12e\n", 1.0 / rcond);
-	fflush(stderr);
+#ifdef DEBUG
+		/* print summary */
+		fflush(stderr);
+		fflush(stdout);
+		fprintf(stderr, "NITER         = %zu\n", gsl_multifit_nlinear_niter(work));
+		fprintf(stderr, "NFEV          = %zu\n", fdf->nevalf);
+		fprintf(stderr, "NJEV          = %zu\n", fdf->nevaldf);
+		fprintf(stderr, "NAEV          = %zu\n", fdf->nevalfvv);
+		fprintf(stderr, "initial cost  = %.12e\n", chisq0);
+		fprintf(stderr, "final cost    = %.12e\n", chisq);
+		fprintf(stderr, "final x       = (%.12e, %.12e, %12e)\n",
+			  gsl_vector_get(x, 0), gsl_vector_get(x, 1), gsl_vector_get(x, 2));
+		fprintf(stderr, "final cond(J) = %.12e\n", 1.0 / rcond);
+		fflush(stderr);
+#endif
+	}
+	else
+		err_msg("");
 
 	gsl_multifit_nlinear_free(work);
 }
@@ -301,8 +314,7 @@ runstats_initparam(stat_param ** x, double b){
 	gsl_vector_set(*x, 1, b * 1.02); 	/* center */
 	gsl_vector_set(*x, 2, b * 0.01); 	/* width */
 
-	// TODO: return value
-	return 0;
+	return ((*x == NULL) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
 /*
@@ -323,10 +335,11 @@ runstats_inithist(stat_hist ** h, double b){
 	/* Allocate memory, histogram data for RTC accumulation */
 	*h = gsl_histogram_alloc (n);
 	// set ranges and reset bins, fixed to n bin count
-	(void)gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max);
+	int ret;
+	if ((ret = gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max)))
+		err_msg("unable to initialize histogram bins: %s", gsl_strerror(ret));
 
-	// TODO: return value
-	return 0;
+	return ((*h == NULL || ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
 /*
@@ -373,9 +386,11 @@ runstats_fithist(stat_hist **h)
 	// adjust margins bin limits
 	double bin_min = mn - ((double)n/2.0)*W;
 	double bin_max = mn + ((double)n/2.0)*W;
-	(void)gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max);
+	int ret;
+	if ((ret = gsl_histogram_set_ranges_uniform (*h, bin_min, bin_max)))
+		err_msg("unable to initialize histogram bins: %s", gsl_strerror(ret));
 
-	return 0;
+	return ((*h == NULL || ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
 /*
