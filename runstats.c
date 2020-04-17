@@ -23,6 +23,8 @@
 #include <errno.h>			// system error management (LIBC)
 #include <string.h>			// strerror print
 
+#include "error.h"
+
 const size_t num_par = 3;   /* number of model parameters, = polynomial or function size */
 
 
@@ -182,6 +184,7 @@ func_fvv (const gsl_vector * x, const gsl_vector * v,
  *
  *  Return value: - none
  */
+#ifdef DEBUG
 static void
 callback(const size_t iter, void *params,
          const gsl_multifit_nlinear_workspace *w)
@@ -194,7 +197,10 @@ callback(const size_t iter, void *params,
 	(void) params; /* not used */
 
 	/* compute reciprocal condition number of J(x) */
-	(void)gsl_multifit_nlinear_rcond(&rcond, w);
+	int ret;
+	if ((ret = gsl_multifit_nlinear_rcond(&rcond, w)))
+		err_msg("failure in Jacobian comptuation: %s", gsl_strerror(ret));
+
 
 	fprintf(stderr, "iter %2zu: a = %.4f, b = %.4f, c = %.4f, |a|/|v| = %.4f cond(J) = %8.4f, |f(x)| = %.4f\n",
 		  iter,
@@ -205,6 +211,7 @@ callback(const size_t iter, void *params,
 		  1.0 / rcond,
 		  gsl_blas_dnrm2(f));
 }
+#endif
 
 /*
  *  solve_system(): solver setup and parameters, Gaussian fit
@@ -242,7 +249,12 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 
 	/* iterate until convergence */
 	gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol,
-							  callback, NULL, &info, work);
+#ifdef DEBUG
+							  callback,
+#else
+							  NULL,
+#endif
+							  NULL, &info, work);
 
 	/* store final cost */
 	gsl_blas_ddot(f, f, &chisq);
