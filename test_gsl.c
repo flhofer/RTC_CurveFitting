@@ -3,6 +3,7 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_histogram.h>
+#include <gsl/gsl_math.h>
 
 #include <time.h>			// constants and functions for clock
 #include <errno.h>			// system error management (LIBC)
@@ -63,7 +64,7 @@ void  verify_histogram(stat_hist * h, stat_param * x, int print){
 		if (print)
 			printf("%f %f %f\n", ti, yi, fi);
 		else
-			ck_assert( abs(yi-fi) <= (A * 0.01) ); // 1% maximum error
+			ck_assert( abs(yi-fi)/A <= 0.01 ); // 1% maximum error
 	  }
 	}
 	fflush(stdout);
@@ -176,14 +177,24 @@ uint32_t fitting_check(stat_hist * h, stat_param * x){
 	return now.tv_nsec;
 }
 
+uint32_t nsecold;
+
+/*
+ * Random fitting tests with high variability
+ *
+ * none the less expect time reduction at every iteration
+ */
 START_TEST(fitting_check_random)
 {
+
 	(void)printf("***** Solver Iteration %d *****\n", _i+1);
 	fflush(stdout);
 
 	// do fitting, all except first
 	if (_i)
 		(void)runstats_fithist(&h);
+	else // first iteration, set value 10 ms
+		nsecold = 10000000; // 10 ms start point
 
 	(void)generate_histogram(h, 100, 0.010500, 0.000150, 0.1);
 
@@ -191,10 +202,10 @@ START_TEST(fitting_check_random)
 
 	// Max 5..4..3..2..1 ms, the closer we get
 	ck_assert_int_le(nsec, (NOITER - _i) * 1000000 );
+	ck_assert_int_lt(nsec, nsecold);
+	nsecold = nsec;
 }
 END_TEST
-
-uint32_t nsecold = 10000000; // 10 ms start point
 
 START_TEST(fitting_check_adapt)
 {
@@ -203,19 +214,22 @@ START_TEST(fitting_check_adapt)
 	// do fitting, all except first
 	if (_i)
 		(void)runstats_fithist(&h);
+	else // first iteration, set value 10 ms
+		nsecold = 10000000; // 10 ms start point
 
-	size_t n = generate_histogram(h, 100, 0.010500, 0.000150, 0.0009); // randomize 0.9%
+	size_t n = generate_histogram(h, 100, 0.010500, 0.000150,  0.01 / M_E ); // randomize 1%
 
 	(void)printf("Number of bins: %lu\n", n);
 	fflush(stdout);
 
-
+	// run test
 	uint32_t nsec = fitting_check(h, x);
 
 	verify_histogram(h,x,0);
 
-	// Max 5..4..3..2..1 ms, the closer we get
-	ck_assert_int_le(nsec, nsecold);
+	// reduce time needed the closer we get
+	ck_assert_int_lt(nsec, nsecold);
+	nsecold = nsec;
 }
 END_TEST
 
@@ -307,7 +321,6 @@ void test_merge (Suite * s) {
 
 	TCase *tc1 = tcase_create("Probability_merge_test");
 
-	// TODO: Teardown print does not work yet -> merge is way higher
 	tcase_add_unchecked_fixture(tc1, test_merge_setup, test_merge_teardown);
 	tcase_add_loop_test(tc1, fitting_check_merge, 0, NOITER);
 
