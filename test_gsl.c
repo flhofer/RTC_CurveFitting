@@ -12,13 +12,21 @@
 
 #include "runstats.h"
 
-#define USEC_PER_SEC		1000000
-#define NSEC_PER_SEC		1000000000
-
+/* ----------- EXTERNALLY VISIBLE VARIABLES ----------- */
 FILE * dbg_out; // output file stream
 
-size_t generate_histogram(stat_hist *, double, double, double, double rand);
+/* ----------- LOCALLY VISIBLE VARIABLES ----------- */
+static stat_hist * h;
+static stat_param * x;
+// temporary value to compare last run for random and adapt
+static uint32_t nsecPrev;
 
+/* ----------- LOCAL DEFINITIONS ----------- */
+#define USEC_PER_SEC		1000000
+#define NSEC_PER_SEC		1000000000
+#define NOITER 5 // number of sampling iterations for fitting
+
+/* ----------- HELPER FUNCTIONS ----------- */
 /*
  * tsnorm(): verifies timespec for boundaries + fixes it
  *
@@ -34,11 +42,6 @@ static inline void tsnorm(struct timespec *ts)
 	}
 }
 
-#define NOITER 5 // number of sampling iterations for fitting
-
-stat_hist * h;
-stat_param * x;
-
 /*
  * verify_histogram () : "verifies" by print or value comparison
  *
@@ -49,11 +52,9 @@ stat_param * x;
  *
  * Return value: value
  */
-void
-verify_histogram(stat_hist * h, stat_param * x, int print){
+static void
+histogram_verify(stat_hist * h, stat_param * x, int print){
 
-	fflush(stdout);
-	fflush(stderr);
 	/*
 	* print resulting data and model
 	* - results vs reality data points
@@ -81,70 +82,11 @@ verify_histogram(stat_hist * h, stat_param * x, int print){
 	  }
 	}
 	fflush(stdout);
+	fflush(dbg_out);
 }
 
 /*
- * test_fitting_setup(): init values
- *
- * Arguments: -
- *
- * Return value: -
- */
-void
-test_fitting_setup (){
-	(void)runstats_inithist (&h, 0.010000);
-	(void)runstats_initparam(&x, 0.010000);
-}
-
-/*
- * test_fitting_teardown(): clear memory
- *
- * Arguments: -
- *
- * Return value: -
- */
-void
-test_fitting_teardown(){
-
-	verify_histogram(h,x, 1);
-
-	/*
-	* Free parameter vector and histogram structure
-	*/
-	gsl_vector_free(x);
-	gsl_histogram_free (h);
-}
-
-/*
- * test_merge_setup(): init values
- *
- * Arguments: -
- *
- * Return value: -
- */
-void
-test_merge_setup (){
-	(void)runstats_initparam(&x, 0.010000);
-}
-
-/*
- * test_fitting_teardown(): clear memory
- *
- * Arguments: -
- *
- * Return value: -
- */
-void
-test_merge_teardown(){
-	/*
-	* Free parameter vector and histogram structure
-	*/
-	gsl_vector_free(x);
-
-}
-
-/*
- * generate_histogram() : generation of random data -> Gaussian with noise
+ * histogram_generate() : generation of random data -> Gaussian with noise
  *
  * Arguments: - pointer to histogram structure
  * 			  - amplitude  = number of occurences
@@ -153,8 +95,8 @@ test_merge_teardown(){
  *
  * Return value: - number of generated bins
  */
-size_t
-generate_histogram(stat_hist * h, double a, double b, double c, double rand){
+static size_t
+histogram_generate(stat_hist * h, double a, double b, double c, double rand){
 	size_t n = gsl_histogram_bins(h);
 	{
 		// init random Gaussian noise
@@ -194,7 +136,7 @@ generate_histogram(stat_hist * h, double a, double b, double c, double rand){
  *
  * Return value: - elapsed time in nanoseconds (1 second max)
  */
-uint32_t
+static uint32_t
 fitting_check(stat_hist * h, stat_param * x){
 	// get time stamp
 	int ret;
@@ -232,8 +174,6 @@ fitting_check(stat_hist * h, stat_param * x){
 	return now.tv_nsec;
 }
 
-uint32_t nsecPrev; // temp value to compare last run for random and adapt
-
 /*
  * Random fitting tests with high variability
  * nonetheless expect time reduction at every iteration
@@ -251,7 +191,7 @@ START_TEST(fitting_check_random)
 	else // first iteration, set value 10 ms
 		nsecPrev = 10000000; // 10 ms start point
 
-	(void)generate_histogram(h, 100, 0.010500, 0.000150, 0.1);
+	(void)histogram_generate(h, 100, 0.010500, 0.000150, 0.1);
 
 	uint32_t nsec = fitting_check(h, x);
 
@@ -276,7 +216,7 @@ START_TEST(fitting_check_adapt)
 	else // first iteration, set value 10 ms
 		nsecPrev = 10000000; // 10 ms start point
 
-	size_t n = generate_histogram(h, 100, 0.010500, 0.000150,  0.01 / M_E ); // randomize 1%
+	size_t n = histogram_generate(h, 100, 0.010500, 0.000150,  0.01 / M_E ); // randomize 1%
 
 	(void)printf("Number of bins: %lu\n", n);
 	fflush(stdout);
@@ -284,7 +224,7 @@ START_TEST(fitting_check_adapt)
 	// run test
 	uint32_t nsec = fitting_check(h, x);
 
-	verify_histogram(h,x,0);
+	histogram_verify(h,x,0);
 
 	// reduce time needed the closer we get
 	ck_assert_int_lt(nsec, nsecPrev);
@@ -313,33 +253,34 @@ END_TEST
  * Merged probability check
  * Curve mix check, adaptation and fix, check 50% fit
  */
-struct {
-	double exp;
-	double a;
-	double b;
-	double c;
-	} merge_bells[5] = {
-		{0.010000, 102, 0.010500, 0.000150},
-		{0.001000, 60, 0.001020, 0.000090},
-		{0.003000,510, 0.003040, 0.000140},
-		{0.000200,154, 0.000220, 0.000030},
-		{0.010000,324, 0.010500, 0.000090}
-		};
-
-double merge_avg = 0;
-
 START_TEST(fitting_check_merge)
 {
+	struct {
+		double exp;
+		double a;
+		double b;
+		double c;
+		} static const merge_bells[5] = {
+			{0.010000, 102, 0.010500, 0.000150},
+			{0.001000, 60, 0.001020, 0.000090},
+			{0.003000,510, 0.003040, 0.000140},
+			{0.000200,154, 0.000220, 0.000030},
+			{0.010000,324, 0.010500, 0.000090}
+			};
 
+	static double merge_avg = 0;
+
+	// local parameters, for merge
 	stat_hist * h0;
 	stat_param * x0;
+
 	(void)runstats_inithist (&h0, merge_bells[_i].exp);
 	(void)runstats_initparam(&x0, merge_bells[_i].exp);
 
-	(void)generate_histogram(h0, merge_bells[_i].a, merge_bells[_i].b, merge_bells[_i].c, 0.009); // randomize 0.9%
+	(void)histogram_generate(h0, merge_bells[_i].a, merge_bells[_i].b, merge_bells[_i].c, 0.009); // randomize 0.9%
 
 	(void)fitting_check(h0, x0);
-	verify_histogram(h0,x0, 1);
+	histogram_verify(h0,x0, 1);
 
 	(void)gsl_vector_add(x, x0); // add two parameter vectors (central limit theorem)
 
@@ -347,7 +288,6 @@ START_TEST(fitting_check_merge)
 
 	double p = 0, error = 0;
 	(void)runstats_mdlpdf(x, merge_avg, 1.0, &p, &error);
-	fflush(stdout);
 
 	ck_assert(p >= 0.5);
 	ck_assert(error < 0.000005);
@@ -357,6 +297,65 @@ START_TEST(fitting_check_merge)
 }
 END_TEST
 
+/*
+ * test_fitting_setup(): init values
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
+static void
+test_fitting_setup (){
+	(void)runstats_inithist (&h, 0.010000);
+	(void)runstats_initparam(&x, 0.010000);
+}
+
+/*
+ * test_fitting_teardown(): clear memory
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
+static void
+test_fitting_teardown(){
+
+	histogram_verify(h,x, 1);
+
+	/*
+	* Free parameter vector and histogram structure
+	*/
+	gsl_vector_free(x);
+	gsl_histogram_free (h);
+}
+
+/*
+ * test_merge_setup(): init values
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
+static void
+test_merge_setup (){
+	(void)runstats_initparam(&x, 0.010000);
+}
+
+/*
+ * test_fitting_teardown(): clear memory
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
+static void
+test_merge_teardown(){
+	/*
+	* Free parameter vector and histogram structure
+	*/
+	gsl_vector_free(x);
+
+}
 
 /*
  * TEST SUITES:
@@ -364,7 +363,7 @@ END_TEST
  * CK_RUN_CASE=Fitting_random
  * CK_RUN_CASE=Fitting_adaptation
  */
-void
+static void
 test_fitting (Suite * s) {
 
 	TCase *tc1 = tcase_create("Fitting_random");
@@ -391,7 +390,7 @@ test_fitting (Suite * s) {
  * Merging test suite
  * CK_RUN_CASE=Probability_merge_test
  */
-void
+static void
 test_merge (Suite * s) {
 
 	TCase *tc1 = tcase_create("Probability_merge_test");
@@ -430,6 +429,7 @@ main(void)
     srunner_free(sr);
 
 	fflush(dbg_out);
+	fflush(stdout);
 
     return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

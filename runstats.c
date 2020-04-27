@@ -280,7 +280,6 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 		}
 
 		/* print summary */
-		fflush(dbg_out);
 		printDbg("NITER         = %zu\n", gsl_multifit_nlinear_niter(work));
 		printDbg("NFEV          = %zu\n", fdf->nevalf);
 		printDbg("NJEV          = %zu\n", fdf->nevaldf);
@@ -496,6 +495,16 @@ uniparm_copy(stat_param ** x){
 	return ((ret != 0) ? GSL_FAILURE : GSL_SUCCESS);
 }
 
+/*
+ * runstats_mdlpdf() :
+ *
+ * Arguments: - pointer to the parameter vector
+ * 			  - parameter a, b of the model
+ * 			  - address probability value (return)
+ * 			  - address of error value (return)
+ *
+ * Return value: success or error code
+ */
 int
 runstats_mdlpdf(stat_param * x, double a, double b, double * p, double * error){
 
