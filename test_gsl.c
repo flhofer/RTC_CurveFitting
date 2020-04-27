@@ -37,7 +37,8 @@ static inline void tsnorm(struct timespec *ts)
 stat_hist * h;
 stat_param * x;
 
-void  verify_histogram(stat_hist * h, stat_param * x, int print){
+void
+verify_histogram(stat_hist * h, stat_param * x, int print){
 
 	fflush(stdout);
 	fflush(stderr);
@@ -70,12 +71,14 @@ void  verify_histogram(stat_hist * h, stat_param * x, int print){
 	fflush(stdout);
 }
 
-void test_fitting_setup (){
+void
+test_fitting_setup (){
 	(void)runstats_inithist (&h, 0.010000);
 	(void)runstats_initparam(&x, 0.010000);
 }
 
-void test_fitting_teardown(){
+void
+test_fitting_teardown(){
 
 	verify_histogram(h,x, 1);
 
@@ -86,11 +89,13 @@ void test_fitting_teardown(){
 	gsl_histogram_free (h);
 }
 
-void test_merge_setup (){
+void
+test_merge_setup (){
 	(void)runstats_initparam(&x, 0.010000);
 }
 
-void test_merge_teardown(){
+void
+test_merge_teardown(){
 	/*
 	* Free parameter vector and histogram structure
 	*/
@@ -108,7 +113,8 @@ void test_merge_teardown(){
  *
  * Return value: - number of generated bins
  */
-size_t generate_histogram(stat_hist * h, double a, double b, double c, double rand){
+size_t
+generate_histogram(stat_hist * h, double a, double b, double c, double rand){
 	size_t n = gsl_histogram_bins(h);
 	{
 		// init random Gaussian noise
@@ -140,7 +146,8 @@ size_t generate_histogram(stat_hist * h, double a, double b, double c, double ra
 	return n;
 }
 
-uint32_t fitting_check(stat_hist * h, stat_param * x){
+uint32_t
+fitting_check(stat_hist * h, stat_param * x){
 	// get time stamp
 	int ret;
 	struct timespec now, old;
@@ -293,7 +300,8 @@ END_TEST
 /*
  * Fitting test suite
  */
-void test_fitting (Suite * s) {
+void
+test_fitting (Suite * s) {
 
 	TCase *tc1 = tcase_create("Fitting_random");
 
@@ -317,7 +325,8 @@ void test_fitting (Suite * s) {
 /*
  * Merging test suite
  */
-void test_merge (Suite * s) {
+void
+test_merge (Suite * s) {
 
 	TCase *tc1 = tcase_create("Probability_merge_test");
 
@@ -332,7 +341,8 @@ void test_merge (Suite * s) {
 /*
  * Setup check runners and return values
  */
-int main(void)
+int
+main(void)
 {
 	// init pseudo-random tables
 	srand(time(NULL));
