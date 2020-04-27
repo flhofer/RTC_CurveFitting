@@ -15,6 +15,8 @@
 #define USEC_PER_SEC		1000000
 #define NSEC_PER_SEC		1000000000
 
+FILE * dbg_out; // output file stream
+
 size_t generate_histogram(stat_hist *, double, double, double, double rand);
 
 /*
@@ -37,6 +39,16 @@ static inline void tsnorm(struct timespec *ts)
 stat_hist * h;
 stat_param * x;
 
+/*
+ * verify_histogram () : "verifies" by print or value comparison
+ *
+ * Arguments: - histogram structure
+ * 			  - model parameter vector
+ * 			  - print, 0 = check 1% max deviation from peak (A * e) - euler number
+ * 			  		   1 = print on screen only
+ *
+ * Return value: value
+ */
 void
 verify_histogram(stat_hist * h, stat_param * x, int print){
 
@@ -65,18 +77,32 @@ verify_histogram(stat_hist * h, stat_param * x, int print){
 		if (print)
 			printf("%f %f %f\n", ti, yi, fi);
 		else
-			ck_assert( abs(yi-fi)/A <= 0.01 ); // 1% maximum error
+			ck_assert( abs(yi-fi)/(A * M_E) <= 0.01 ); // 1% maximum error
 	  }
 	}
 	fflush(stdout);
 }
 
+/*
+ * test_fitting_setup(): init values
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
 void
 test_fitting_setup (){
 	(void)runstats_inithist (&h, 0.010000);
 	(void)runstats_initparam(&x, 0.010000);
 }
 
+/*
+ * test_fitting_teardown(): clear memory
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
 void
 test_fitting_teardown(){
 
@@ -89,11 +115,25 @@ test_fitting_teardown(){
 	gsl_histogram_free (h);
 }
 
+/*
+ * test_merge_setup(): init values
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
 void
 test_merge_setup (){
 	(void)runstats_initparam(&x, 0.010000);
 }
 
+/*
+ * test_fitting_teardown(): clear memory
+ *
+ * Arguments: -
+ *
+ * Return value: -
+ */
 void
 test_merge_teardown(){
 	/*
@@ -146,6 +186,14 @@ generate_histogram(stat_hist * h, double a, double b, double c, double rand){
 	return n;
 }
 
+/*
+ * fitting_check() : call curve fitting solver
+ *
+ * Arguments: - histogram structure
+ * 			  - model parameter vector
+ *
+ * Return value: - elapsed time in nanoseconds (1 second max)
+ */
 uint32_t
 fitting_check(stat_hist * h, stat_param * x){
 	// get time stamp
@@ -184,12 +232,12 @@ fitting_check(stat_hist * h, stat_param * x){
 	return now.tv_nsec;
 }
 
-uint32_t nsecold;
+uint32_t nsecPrev; // temp value to compare last run for random and adapt
 
 /*
  * Random fitting tests with high variability
- *
- * none the less expect time reduction at every iteration
+ * nonetheless expect time reduction at every iteration
+ * 5..1ms max per cycle
  */
 START_TEST(fitting_check_random)
 {
@@ -201,7 +249,7 @@ START_TEST(fitting_check_random)
 	if (_i)
 		(void)runstats_fithist(&h);
 	else // first iteration, set value 10 ms
-		nsecold = 10000000; // 10 ms start point
+		nsecPrev = 10000000; // 10 ms start point
 
 	(void)generate_histogram(h, 100, 0.010500, 0.000150, 0.1);
 
@@ -209,11 +257,15 @@ START_TEST(fitting_check_random)
 
 	// Max 5..4..3..2..1 ms, the closer we get
 	ck_assert_int_le(nsec, (NOITER - _i) * 1000000 );
-	ck_assert_int_lt(nsec, nsecold);
-	nsecold = nsec;
+	ck_assert_int_lt(nsec, nsecPrev);
+	nsecPrev = nsec;
 }
 END_TEST
 
+/*
+ * Adaptive fitting test. Adapting bin number to size
+ * every time requiring less time for adaptation
+ */
 START_TEST(fitting_check_adapt)
 {
 	(void)printf("***** Solver Iteration %d *****\n", _i+1);
@@ -222,7 +274,7 @@ START_TEST(fitting_check_adapt)
 	if (_i)
 		(void)runstats_fithist(&h);
 	else // first iteration, set value 10 ms
-		nsecold = 10000000; // 10 ms start point
+		nsecPrev = 10000000; // 10 ms start point
 
 	size_t n = generate_histogram(h, 100, 0.010500, 0.000150,  0.01 / M_E ); // randomize 1%
 
@@ -235,11 +287,16 @@ START_TEST(fitting_check_adapt)
 	verify_histogram(h,x,0);
 
 	// reduce time needed the closer we get
-	ck_assert_int_lt(nsec, nsecold);
-	nsecold = nsec;
+	ck_assert_int_lt(nsec, nsecPrev);
+	nsecPrev = nsec;
 }
 END_TEST
 
+/*
+ * Check equal probability distribution
+ * Integrate over resulting parameter vector and
+ * verify upper half and lower half contain 50% of probability
+ */
 START_TEST(fitting_check_probability)
 {
 	double p = 0, error = 0;
@@ -252,6 +309,10 @@ START_TEST(fitting_check_probability)
 }
 END_TEST
 
+/*
+ * Merged probability check
+ * Curve mix check, adaptation and fix, check 50% fit
+ */
 struct {
 	double exp;
 	double a;
@@ -298,7 +359,10 @@ END_TEST
 
 
 /*
+ * TEST SUITES:
  * Fitting test suite
+ * CK_RUN_CASE=Fitting_random
+ * CK_RUN_CASE=Fitting_adaptation
  */
 void
 test_fitting (Suite * s) {
@@ -323,7 +387,9 @@ test_fitting (Suite * s) {
 }
 
 /*
+ * TEST SUITES:
  * Merging test suite
+ * CK_RUN_CASE=Probability_merge_test
  */
 void
 test_merge (Suite * s) {
@@ -339,13 +405,16 @@ test_merge (Suite * s) {
 }
 
 /*
+ * MAIN PROGRAM TEST SUITES:
  * Setup check runners and return values
  */
 int
 main(void)
 {
-	// init pseudo-random tables
+	// initialize pseudo-random tables
 	srand(time(NULL));
+	// set debug pipe
+	dbg_out = stderr;
 
     int nf=0;
     SRunner *sr;
@@ -360,8 +429,7 @@ main(void)
     nf += srunner_ntests_failed(sr);
     srunner_free(sr);
 
-	fflush(stdout);
-	fflush(stderr);
+	fflush(dbg_out);
 
     return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

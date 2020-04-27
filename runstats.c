@@ -47,7 +47,7 @@ runstats_gaussian(const double a, const double b, const double c, const double t
 }
 
 /*
- *  func_gaussian(): function to calculate integral for gaussian fit
+ *  func_gaussian(): function to calculate integral for Gaussian fit
  *
  *  Arguments: - model fitting parameter vector
  * 			   - function data points, f(t) = y (real)
@@ -201,7 +201,7 @@ callback(const size_t iter, void *params,
 	if ((ret = gsl_multifit_nlinear_rcond(&rcond, w)))
 		err_msg("failure in Jacobian computation: %s", gsl_strerror(ret));
 
-	fprintf(stderr, "iter %2zu: a = %.4f, b = %.4f, c = %.4f, |a|/|v| = %.4f cond(J) = %8.4f, |f(x)| = %.4f\n",
+	printDbg("iter %2zu: a = %.4f, b = %.4f, c = %.4f, |a|/|v| = %.4f cond(J) = %8.4f, |f(x)| = %.4f\n",
 		  iter,
 		  gsl_vector_get(x, 0),
 		  gsl_vector_get(x, 1),
@@ -279,21 +279,18 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 			return ret;
 		}
 
-#ifdef DEBUG
 		/* print summary */
-		fflush(stderr);
-		fflush(stdout);
-		fprintf(stderr, "NITER         = %zu\n", gsl_multifit_nlinear_niter(work));
-		fprintf(stderr, "NFEV          = %zu\n", fdf->nevalf);
-		fprintf(stderr, "NJEV          = %zu\n", fdf->nevaldf);
-		fprintf(stderr, "NAEV          = %zu\n", fdf->nevalfvv);
-		fprintf(stderr, "initial cost  = %.12e\n", chisq0);
-		fprintf(stderr, "final cost    = %.12e\n", chisq);
-		fprintf(stderr, "final x       = (%.12e, %.12e, %12e)\n",
+		fflush(dbg_out);
+		printDbg("NITER         = %zu\n", gsl_multifit_nlinear_niter(work));
+		printDbg("NFEV          = %zu\n", fdf->nevalf);
+		printDbg("NJEV          = %zu\n", fdf->nevaldf);
+		printDbg("NAEV          = %zu\n", fdf->nevalfvv);
+		printDbg("initial cost  = %.12e\n", chisq0);
+		printDbg("final cost    = %.12e\n", chisq);
+		printDbg("final x       = (%.12e, %.12e, %12e)\n",
 			  gsl_vector_get(x, 0), gsl_vector_get(x, 1), gsl_vector_get(x, 2));
-		fprintf(stderr, "final cond(J) = %.12e\n", 1.0 / rcond);
-		fflush(stderr);
-#endif
+		printDbg("final cond(J) = %.12e\n", 1.0 / rcond);
+		fflush(dbg_out);
 	}
 	else
 		err_msg("failed to initialize solver: %s", gsl_strerror(ret));
@@ -304,7 +301,7 @@ solve_system(gsl_vector *x, gsl_multifit_nlinear_fdf *fdf,
 }
 
 /*
- * runstats_initparam: inits the parameter vector
+ * runstats_initparam: initializes the parameter vector
  *
  * Arguments: - pointer to pointer to the memory location for storage
  * 			  - expected center of distribution
@@ -527,11 +524,9 @@ runstats_mdlpdf(stat_param * x, double a, double b, double * p, double * error){
 						w, p, error)))
 		err_msg ("curve integration failed : %s", gsl_strerror(ret));
 
-#ifdef DEBUG
-	printf ("result          = %.18f\n", *p);
-	printf ("estimated error = %.18f\n", *error);
-	printf ("intervals       = %zu\n", w->size);
-#endif
+	printDbg("result          = %.18f\n", *p);
+	printDbg("estimated error = %.18f\n", *error);
+	printDbg("intervals       = %zu\n", w->size);
 
 	gsl_integration_workspace_free (w);
 	gsl_vector_free(x);
