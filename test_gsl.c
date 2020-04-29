@@ -76,12 +76,11 @@ histogram_verify(stat_hist * h, stat_param * x, int print){
 		double fi = runstats_gaussian(A, B, C, ti);
 
 		if (print)
-			printf("%f %f %f\n", ti, yi, fi);
+			(void)fprintf(dbg_out, "%f %f %f\n", ti, yi, fi);
 		else
 			ck_assert( abs(yi-fi)/(A * M_E) <= 0.01 ); // 1% maximum error
 	  }
 	}
-	fflush(stdout);
 	fflush(dbg_out);
 }
 
@@ -146,7 +145,7 @@ fitting_check(stat_hist * h, stat_param * x){
 		ret = clock_gettime(CLOCK_MONOTONIC, &old);
 		if (0 != ret) {
 			if (EINTR != ret)
-				printf("clock_gettime() failed: %s", strerror(errno));
+				(void)fprintf(dbg_out, "clock_gettime() failed: %s", strerror(errno));
 		}
 	}
 
@@ -160,7 +159,7 @@ fitting_check(stat_hist * h, stat_param * x){
 		ret = clock_gettime(CLOCK_MONOTONIC, &now);
 		if (0 != ret) {
 			if (EINTR != ret)
-				printf("clock_gettime() failed: %s", strerror(errno));
+				(void)fprintf(dbg_out, "clock_gettime() failed: %s", strerror(errno));
 		}
 
 		// compute difference -> time needed
@@ -168,7 +167,7 @@ fitting_check(stat_hist * h, stat_param * x){
 		now.tv_nsec -= old.tv_nsec;
 		tsnorm(&now);
 
-		fprintf(dbg_out, "Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
+		(void)fprintf(dbg_out, "Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
 	}
 	return now.tv_nsec;
 }
@@ -181,8 +180,8 @@ fitting_check(stat_hist * h, stat_param * x){
 START_TEST(fitting_check_random)
 {
 
-	(void)printf("***** Solver Iteration %d *****\n", _i+1);
-	fflush(stdout);
+	(void)fprintf(dbg_out, "***** Solver Iteration %d *****\n", _i+1);
+	fflush(dbg_out);
 
 	// do fitting, all except first
 	if (_i)
@@ -207,7 +206,7 @@ END_TEST
  */
 START_TEST(fitting_check_adapt)
 {
-	(void)printf("***** Solver Iteration %d *****\n", _i+1);
+	(void)fprintf(dbg_out, "***** Solver Iteration %d *****\n", _i+1);
 
 	// do fitting, all except first
 	if (_i)
@@ -215,8 +214,8 @@ START_TEST(fitting_check_adapt)
 
 	size_t n = histogram_generate(h, 100, 0.010500, 0.000150,  0.01 ); // randomize 1%
 
-	(void)printf("Number of bins: %lu\n", n);
-	fflush(stdout);
+	(void)fprintf(dbg_out, "Number of bins: %lu\n", n);
+	fflush(dbg_out);
 
 	// run test
 	uint32_t nsec = fitting_check(h, x);
@@ -240,10 +239,10 @@ END_TEST
 START_TEST(fitting_check_probability)
 {
 	double p = 0, error = 0;
-	(void)runstats_mdlpdf(x, test_mean, gsl_histogram_max(h),&p, &error);
-	fflush(stdout);
+	(void)runstats_mdlpdf(x, 0, test_mean, &p, &error);
+	fflush(dbg_out);
 
-	ck_assert(p < 0.5);
+	ck_assert(p >= 0.5);
 	ck_assert(error < 0.000005);
 
 }
@@ -331,7 +330,7 @@ test_fitting_teardown(){
  */
 static void
 test_merge_setup (){
-	(void)runstats_initparam(&x, 0.010000);
+	(void)runstats_initparam(&x, 0.0);
 }
 
 /*
@@ -422,7 +421,6 @@ main(void)
     srunner_free(sr);
 
 	fflush(dbg_out);
-	fflush(stdout);
 
     return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
