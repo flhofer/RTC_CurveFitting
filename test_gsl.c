@@ -13,13 +13,13 @@
 #include "runstats.h"
 
 /* ----------- EXTERNALLY VISIBLE VARIABLES ----------- */
-FILE * dbg_out; // output file stream
+FILE * dbg_out; // output file stream for stderr
 
 /* ----------- LOCALLY VISIBLE VARIABLES ----------- */
 static stat_hist * h;
 static stat_param * x;
 // temporary value to compare last run for random and adapt
-static uint32_t nsecPrev;
+static double test_mean = 0;
 
 /* ----------- LOCAL DEFINITIONS ----------- */
 #define USEC_PER_SEC		1000000
@@ -105,7 +105,6 @@ histogram_generate(stat_hist * h, double a, double b, double c, double rand){
 		gsl_rng_env_setup ();
 		r = gsl_rng_alloc (T);
 
-
 		/* generate synthetic data with noise */
 		for (size_t i = 0; i < n; ++i)
 		  {
@@ -118,7 +117,7 @@ histogram_generate(stat_hist * h, double a, double b, double c, double rand){
 
 			// compute Gaussian value and random noise
 			double y0 = runstats_gaussian(a, b, c, t);
-			double dy = gsl_ran_gaussian (r, rand * y0);
+			double dy = gsl_ran_gaussian (r, (rand / M_E) * y0);
 
 			// insert into histogram
 			gsl_histogram_accumulate(h, t, y0 + dy);
@@ -169,7 +168,7 @@ fitting_check(stat_hist * h, stat_param * x){
 		now.tv_nsec -= old.tv_nsec;
 		tsnorm(&now);
 
-		printf("Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
+		fprintf(dbg_out, "Solve time: %ld.%09ld\n", now.tv_sec, now.tv_nsec);
 	}
 	return now.tv_nsec;
 }
@@ -188,17 +187,17 @@ START_TEST(fitting_check_random)
 	// do fitting, all except first
 	if (_i)
 		(void)runstats_fithist(&h);
-	else // first iteration, set value 10 ms
-		nsecPrev = 10000000; // 10 ms start point
 
 	(void)histogram_generate(h, 100, 0.010500, 0.000150, 0.1);
 
 	uint32_t nsec = fitting_check(h, x);
 
-	// Max 5..4..3..2..1 ms, the closer we get
-	ck_assert_int_le(nsec, (NOITER - _i) * 1000000 );
-	ck_assert_int_lt(nsec, nsecPrev);
-	nsecPrev = nsec;
+	// Max 50..18..6,8..2,5..0,875 ms, the closer we get
+	uint32_t approx = (uint32_t) 50000000 * pow(M_E, -_i);
+	ck_assert_int_le(nsec, approx );
+
+	// store mean for probability check
+	test_mean = gsl_histogram_mean(h);
 }
 END_TEST
 
@@ -213,10 +212,8 @@ START_TEST(fitting_check_adapt)
 	// do fitting, all except first
 	if (_i)
 		(void)runstats_fithist(&h);
-	else // first iteration, set value 10 ms
-		nsecPrev = 10000000; // 10 ms start point
 
-	size_t n = histogram_generate(h, 100, 0.010500, 0.000150,  0.01 / M_E ); // randomize 1%
+	size_t n = histogram_generate(h, 100, 0.010500, 0.000150,  0.01 ); // randomize 1%
 
 	(void)printf("Number of bins: %lu\n", n);
 	fflush(stdout);
@@ -226,9 +223,12 @@ START_TEST(fitting_check_adapt)
 
 	histogram_verify(h,x,0);
 
-	// reduce time needed the closer we get
-	ck_assert_int_lt(nsec, nsecPrev);
-	nsecPrev = nsec;
+	// Max 50..18..6,8..2,5..0,875 ms, the closer we get
+	uint32_t approx = (uint32_t) 50000000 * pow(M_E, -_i);
+	ck_assert_int_le(nsec, approx );
+
+	// store mean for probability check
+	test_mean = gsl_histogram_mean(h);
 }
 END_TEST
 
@@ -240,10 +240,10 @@ END_TEST
 START_TEST(fitting_check_probability)
 {
 	double p = 0, error = 0;
-	(void)runstats_mdlpdf(x, 0.010450, gsl_histogram_max(h),&p, &error);
+	(void)runstats_mdlpdf(x, test_mean, gsl_histogram_max(h),&p, &error);
 	fflush(stdout);
 
-	ck_assert(p >= 0.5);
+	ck_assert(p < 0.5);
 	ck_assert(error < 0.000005);
 
 }
@@ -255,20 +255,20 @@ END_TEST
  */
 START_TEST(fitting_check_merge)
 {
+	/* Bell Constants and sum */
 	struct {
 		double exp;
 		double a;
 		double b;
 		double c;
-		} static const merge_bells[5] = {
+		} static
+			const merge_bells[5] = {
 			{0.010000, 102, 0.010500, 0.000150},
 			{0.001000, 60, 0.001020, 0.000090},
 			{0.003000,510, 0.003040, 0.000140},
 			{0.000200,154, 0.000220, 0.000030},
 			{0.010000,324, 0.010500, 0.000090}
 			};
-
-	static double merge_avg = 0;
 
 	// local parameters, for merge
 	stat_hist * h0;
@@ -280,17 +280,11 @@ START_TEST(fitting_check_merge)
 	(void)histogram_generate(h0, merge_bells[_i].a, merge_bells[_i].b, merge_bells[_i].c, 0.009); // randomize 0.9%
 
 	(void)fitting_check(h0, x0);
-	histogram_verify(h0,x0, 1);
+	histogram_verify(h0, x0, 1);
 
 	(void)gsl_vector_add(x, x0); // add two parameter vectors (central limit theorem)
 
-	merge_avg += gsl_histogram_mean(h0);
-
-	double p = 0, error = 0;
-	(void)runstats_mdlpdf(x, merge_avg, 1.0, &p, &error);
-
-	ck_assert(p >= 0.5);
-	ck_assert(error < 0.000005);
+	test_mean += gsl_histogram_mean(h0);
 
 	(void)gsl_histogram_free(h0);
 	(void)gsl_vector_free(x0);
@@ -321,7 +315,6 @@ static void
 test_fitting_teardown(){
 
 	histogram_verify(h,x, 1);
-
 	/*
 	* Free parameter vector and histogram structure
 	*/
@@ -330,7 +323,7 @@ test_fitting_teardown(){
 }
 
 /*
- * test_merge_setup(): init values
+ * test_merge_setup(): initialize values
  *
  * Arguments: -
  *
@@ -354,7 +347,6 @@ test_merge_teardown(){
 	* Free parameter vector and histogram structure
 	*/
 	gsl_vector_free(x);
-
 }
 
 /*
@@ -397,6 +389,7 @@ test_merge (Suite * s) {
 
 	tcase_add_unchecked_fixture(tc1, test_merge_setup, test_merge_teardown);
 	tcase_add_loop_test(tc1, fitting_check_merge, 0, NOITER);
+	tcase_add_test(tc1, fitting_check_probability);
 
     suite_add_tcase(s, tc1);
 

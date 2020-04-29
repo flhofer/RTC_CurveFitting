@@ -533,7 +533,7 @@ runstats_mdlpdf(stat_param * x, double a, double b, double * p, double * error){
 						w, p, error)))
 		err_msg ("curve integration failed : %s", gsl_strerror(ret));
 
-	printDbg("result          = %.18f\n", *p);
+	printDbg("integr. result  = %.18f\n", *p);
 	printDbg("estimated error = %.18f\n", *error);
 	printDbg("intervals       = %zu\n", w->size);
 
