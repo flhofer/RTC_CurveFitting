@@ -11,6 +11,7 @@
 #include <check.h>			// check C testing library
 
 #include "runstats.h"
+#include "cmnutil.h"	// general definitions
 
 /* ----------- EXTERNALLY VISIBLE VARIABLES ----------- */
 FILE * dbg_out; // output file stream for stderr
@@ -25,22 +26,6 @@ static double test_mean = 0;
 #define USEC_PER_SEC		1000000
 #define NSEC_PER_SEC		1000000000
 #define NOITER 5 // number of sampling iterations for fitting
-
-/* ----------- HELPER FUNCTIONS ----------- */
-/*
- * tsnorm(): verifies timespec for boundaries + fixes it
- *
- * Arguments: pointer to timespec to check
- *
- * Return value: -
- */
-static inline void tsnorm(struct timespec *ts)
-{
-	while (ts->tv_nsec >= NSEC_PER_SEC) {
-		ts->tv_nsec -= NSEC_PER_SEC;
-		ts->tv_sec++;
-	}
-}
 
 /*
  * verify_histogram () : "verifies" by print or value comparison

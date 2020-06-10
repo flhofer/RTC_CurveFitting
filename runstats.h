@@ -31,10 +31,11 @@ int runstats_verifyparam(stat_hist * h, stat_param * x);
 													// verify parameter and histogram areas match
 double runstats_shapehist(stat_hist * h, double b);	// shape value to histogram borders
 int runstats_addhist(stat_hist * h, double b);		// add value to histogram
+int runstats_checkhist(stat_hist * h);				// check prepared for fitting
 
 int runstats_fithist(stat_hist **h);				// fit histogram bins
 
-int runstats_mdlpdf(stat_param * x, double a,
+int runstats_mdlpdf(stat_param * x, double a,		// compute integral from a to b, to get probability p
 		double b, double * p, double * error);
 
 double runstats_gaussian(const double a, const double b,
