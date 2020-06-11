@@ -276,6 +276,29 @@ START_TEST(fitting_check_merge)
 END_TEST
 
 /*
+ * Inverted  probability check
+ * Return value check with probability estimating b value
+ */
+START_TEST(fitting_check_invert)
+{
+	double error, b;
+	double offs = 0.010000; // parameter b of init
+
+	(void)runstats_initparam(&x, offs);
+
+	// gauss center = offs * 1.02 , stdev = offs * 0.01
+	int ret = runstats_mdlUpb(x, test_mean, &b, 0.9, &error);
+
+	ck_assert_int_eq(ret, 0);
+	// acc.to Wolphram Alpha, 0.0103282 (normalized) gives a P of 0.900079
+	ck_assert ( (b > 0.0103281) && (b < 0.0103283));
+
+	gsl_vector_free(x);
+}
+END_TEST
+
+
+/*
  * test_fitting_setup(): init values
  *
  * Arguments: -
@@ -376,6 +399,12 @@ test_merge (Suite * s) {
 	tcase_add_test(tc1, fitting_check_probability);
 
     suite_add_tcase(s, tc1);
+
+	TCase *tc2 = tcase_create("Probability_inverse_test");
+
+	tcase_add_test(tc2, fitting_check_invert);
+
+    suite_add_tcase(s, tc2);
 
 	return;
 }

@@ -38,6 +38,9 @@ int runstats_fithist(stat_hist **h);				// fit histogram bins
 int runstats_mdlpdf(stat_param * x, double a,		// compute integral from a to b, to get probability p
 		double b, double * p, double * error);
 
+int runstats_mdlUpb(stat_param * x, double a,		// compute upper bound b that obtains probability p
+		double * b, double p, double * error);
+
 double runstats_gaussian(const double a, const double b,
 		const double c, const double t);
 
