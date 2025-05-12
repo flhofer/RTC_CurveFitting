@@ -137,7 +137,7 @@ fitting_check(stat_hist * h, stat_param * x){
 	/*
 	* Call solver
 	*/
-	(void)runstats_solvehist(h,x);
+	(void)runstats_histSolve(h,x);
 
 	// update time stamp
 	{
@@ -170,7 +170,7 @@ START_TEST(fitting_check_random)
 
 	// do fitting, all except first
 	if (_i)
-		(void)runstats_fithist(&h);
+		(void)runstats_histFit(&h);
 
 	(void)histogram_generate(h, 100, 0.010500, 0.000150, 0.1);
 
@@ -195,7 +195,7 @@ START_TEST(fitting_check_adapt)
 
 	// do fitting, all except first
 	if (_i)
-		(void)runstats_fithist(&h);
+		(void)runstats_histFit(&h);
 
 	size_t n = histogram_generate(h, 100, 0.010500, 0.000150,  0.01 ); // randomize 1%
 
@@ -258,8 +258,8 @@ START_TEST(fitting_check_merge)
 	stat_hist * h0;
 	stat_param * x0;
 
-	(void)runstats_inithist (&h0, merge_bells[_i].exp);
-	(void)runstats_initparam(&x0, merge_bells[_i].exp);
+	(void)runstats_histInit (&h0, merge_bells[_i].exp);
+	(void)runstats_paramInit(&x0, merge_bells[_i].exp);
 
 	(void)histogram_generate(h0, merge_bells[_i].a, merge_bells[_i].b, merge_bells[_i].c, 0.009); // randomize 0.9%
 
@@ -284,7 +284,7 @@ START_TEST(fitting_check_invert)
 	double error, b;
 	double offs = 0.010000; // parameter b of init
 
-	(void)runstats_initparam(&x, offs);
+	(void)runstats_paramInit(&x, offs);
 
 	// gauss center = offs * 1.02 , stdev = offs * 0.01
 	int ret = runstats_mdlUpb(x, test_mean, &b, 0.9, &error);
@@ -307,8 +307,8 @@ END_TEST
  */
 static void
 test_fitting_setup (){
-	(void)runstats_inithist (&h, 0.010000);
-	(void)runstats_initparam(&x, 0.010000);
+	(void)runstats_histInit (&h, 0.010000);
+	(void)runstats_paramInit(&x, 0.010000);
 }
 
 /*
@@ -338,7 +338,7 @@ test_fitting_teardown(){
  */
 static void
 test_merge_setup (){
-	(void)runstats_initparam(&x, 0.0);
+	(void)runstats_paramInit(&x, 0.0);
 }
 
 /*
