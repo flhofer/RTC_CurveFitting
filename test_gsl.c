@@ -365,23 +365,23 @@ test_merge_teardown(){
 static void
 test_fitting (Suite * s) {
 
-	TCase *tc1 = tcase_create("Fitting_random");
+        TCase *tc1 = tcase_create("Fitting_random");
 
-	tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
-	tcase_add_loop_test(tc1, fitting_check_random, 0, NOITER);
-	tcase_add_test(tc1, fitting_check_probability);
+        tcase_add_unchecked_fixture(tc1, test_fitting_setup, test_fitting_teardown);
+        tcase_add_loop_test(tc1, fitting_check_random, 0, NOITER);
+        tcase_add_test(tc1, fitting_check_probability);
 
-    suite_add_tcase(s, tc1);
+        suite_add_tcase(s, tc1);
 
-	TCase *tc2 = tcase_create("Fitting_adaptation");
+        TCase *tc2 = tcase_create("Fitting_adaptation");
 
-	tcase_add_unchecked_fixture(tc2, test_fitting_setup, test_fitting_teardown);
-	tcase_add_loop_test(tc2, fitting_check_adapt, 0, NOITER);
-	tcase_add_test(tc2, fitting_check_probability);
+        tcase_add_unchecked_fixture(tc2, test_fitting_setup, test_fitting_teardown);
+        tcase_add_loop_test(tc2, fitting_check_adapt, 0, NOITER);
+        tcase_add_test(tc2, fitting_check_probability);
 
-    suite_add_tcase(s, tc2);
+        suite_add_tcase(s, tc2);
 
-	return;
+        return;
 }
 
 /*
@@ -392,21 +392,21 @@ test_fitting (Suite * s) {
 static void
 test_merge (Suite * s) {
 
-	TCase *tc1 = tcase_create("Probability_merge_test");
+        TCase *tc1 = tcase_create("Probability_merge_test");
 
-	tcase_add_unchecked_fixture(tc1, test_merge_setup, test_merge_teardown);
-	tcase_add_loop_test(tc1, fitting_check_merge, 0, NOITER);
-	tcase_add_test(tc1, fitting_check_probability);
+        tcase_add_unchecked_fixture(tc1, test_merge_setup, test_merge_teardown);
+        tcase_add_loop_test(tc1, fitting_check_merge, 0, NOITER);
+        tcase_add_test(tc1, fitting_check_probability);
 
-    suite_add_tcase(s, tc1);
+        suite_add_tcase(s, tc1);
 
-	TCase *tc2 = tcase_create("Probability_inverse_test");
+        TCase *tc2 = tcase_create("Probability_inverse_test");
 
-	tcase_add_test(tc2, fitting_check_invert);
+        tcase_add_test(tc2, fitting_check_invert);
 
-    suite_add_tcase(s, tc2);
+        suite_add_tcase(s, tc2);
 
-	return;
+        return;
 }
 
 /*
@@ -416,25 +416,25 @@ test_merge (Suite * s) {
 int
 main(void)
 {
-	// initialize pseudo-random tables
-	srand(time(NULL));
-	// set debug pipe
-	dbg_out = stderr;
+        // initialize pseudo-random tables
+        srand(time(NULL));
+        // set debug pipe
+        dbg_out = stderr;
 
-    int nf=0;
-    SRunner *sr;
+        int nf=0;
+        SRunner *sr;
 
-    Suite *s1 = suite_create("Fitting");
-    test_fitting(s1);
-    test_merge(s1);
-    sr = srunner_create(s1);
-	// No fork needed to keep shared memory across tests
-	srunner_set_fork_status (sr, CK_NOFORK);
-    srunner_run_all(sr, CK_NORMAL);
-    nf += srunner_ntests_failed(sr);
-    srunner_free(sr);
+        Suite *s1 = suite_create("Fitting");
+        test_fitting(s1);
+        test_merge(s1);
+        sr = srunner_create(s1);
+        // No fork needed to keep shared memory across tests
+        srunner_set_fork_status (sr, CK_NOFORK);
+        srunner_run_all(sr, CK_NORMAL);
+        nf += srunner_ntests_failed(sr);
+        srunner_free(sr);
 
-	fflush(dbg_out);
+        fflush(dbg_out);
 
-    return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+        return nf == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
